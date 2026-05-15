@@ -9,9 +9,15 @@ import { useHistory } from '../hooks/useHistory'
 // trailing-24h linear, producing wildly different displayed APRs for the
 // same protocol (the user reported "1.00% APR" here vs. 400%+ on Landing).
 // Switching to trailing-24h compound aligns both surfaces.
-const MIN_HISTORY_SPAN_DAYS = 0.5
-const MAX_PLAUSIBLE_DAILY = 0.5
-const MAX_DISPLAYED_APR_PCT = 100_000
+// Tighter caps after live-tested 43,906%-type displays on tiny NAV
+// blips. Anything > 1000% APR is almost certainly annualizing a
+// transient spike — show '—' instead of a wildly misleading number.
+// Require ≥2 days of history so a single-flip TVL delta can't ride the
+// extrapolator. The honest fallback message tells the user "data still
+// warming up" — see aprDetail below.
+const MIN_HISTORY_SPAN_DAYS = 2
+const MAX_PLAUSIBLE_DAILY = 0.05      // ~50%/yr daily, well above any real LST
+const MAX_DISPLAYED_APR_PCT = 1_000
 
 export function Stats({ pool }: { pool: PoolState | null }) {
   const { history } = useHistory()

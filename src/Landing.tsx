@@ -95,9 +95,13 @@ async function fetchLiveRate(): Promise<number | null> {
 // hours, e.g. the first day after deploy) blow up to obviously-fake APRs.
 // Inside [MIN, MAX) the number is plausible; outside, we show "—" rather
 // than mislead.
-const MIN_HISTORY_SPAN_DAYS = 0.5 // require ≥12h of snapshots before trusting daily rate
-const MAX_PLAUSIBLE_DAILY = 0.5 // 50%/day cap — anything beyond is data noise
-const MAX_DISPLAYED_APR_PCT = 100_000 // beyond this we render "—"; not believable
+// Caps tightened after a tiny NAV blip rendered "43,906%" / "44,290%"
+// in the wild. Require ≥2 days of history (a single flip can't ride the
+// extrapolator that long) and cap displayed APR at 1,000% (anything
+// wilder is almost certainly annualizing a transient spike).
+const MIN_HISTORY_SPAN_DAYS = 2
+const MAX_PLAUSIBLE_DAILY = 0.05 // 5%/day · ~6300%/yr compounded
+const MAX_DISPLAYED_APR_PCT = 1_000 // beyond this we render "—"; not believable
 
 function useLivePerf(refreshMs = 30_000): PerfState {
   const [state, setState] = useState<PerfState>(INITIAL)

@@ -191,7 +191,7 @@ const COLUMNS: ColumnSpec[] = [
     key: 'gross_sol_in',
     label: 'cost basis',
     align: 'right',
-    hint: 'Lifetime SOL ever paid to the mint flow on this wallet. Not netted against burns.',
+    hint: 'Net SOL paid into the position you currently hold: gross_sol_in − gross_sol_out. Equals stacSOL_held × break-even NAV. (Sorted by lifetime gross_sol_in for stability across mint→burn→mint cycles.)',
   },
   {
     key: 'pnl_sol',
@@ -1056,7 +1056,14 @@ function HolderRowDesktop({
             —
           </span>
         ) : (
-          fmtSolNum(row.grossSolIn)
+          (() => {
+            // NET cost basis = grossSolIn − grossSolOut. See mobile row
+            // for the rationale + perceived-double-count fix.
+            const grossIn = BigInt(row.grossSolIn || '0')
+            const grossOut = BigInt(row.grossSolOut || '0')
+            const net = grossIn > grossOut ? grossIn - grossOut : 0n
+            return fmtSolNum(net.toString())
+          })()
         )}
       </td>
       <PnLCells row={row} />
@@ -1202,11 +1209,25 @@ function HolderCardMobile({
           )}
         </div>
         <div>
-          <div className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]">
+          <div
+            className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]"
+            title="Cost basis of the currently-held position: gross_sol_in − gross_sol_out. This equals stacSOL_held × break-even NAV, and is what you'd need NAV to recover for a wash exit."
+          >
             cost basis
           </div>
           <div className="font-mono text-[var(--color-dim)]">
-            {pure ? '—' : `${fmtSolNum(row.grossSolIn)} SOL`}
+            {pure
+              ? '—'
+              : (() => {
+                  // NET cost basis = gross_sol_in − gross_sol_out.
+                  // Was rendering raw gross_sol_in which looked like
+                  // double-counting after a mint→burn→mint cycle ('cost
+                  // basis 92 SOL on a 27-stacSOL bag with NAV 1.79').
+                  const grossIn = BigInt(row.grossSolIn || '0')
+                  const grossOut = BigInt(row.grossSolOut || '0')
+                  const net = grossIn > grossOut ? grossIn - grossOut : 0n
+                  return `${fmtSolNum(net.toString())} SOL`
+                })()}
           </div>
         </div>
         <div>
