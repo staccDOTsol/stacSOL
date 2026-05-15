@@ -36,7 +36,7 @@ const FLIP_URL =
 const NAV_LINKS = [
   { id: '/', label: 'Home' },
   { id: '/app', label: 'App' },
-  { id: '/create', label: 'launch00r' },
+  { id: '/launches', label: 'launch00r' },
   { id: FLIP_URL, label: 'flip00r', external: true },
   { id: '/portfolio', label: 'Portfolio' },
   { id: '/leaderboard', label: 'Leaderboard' },

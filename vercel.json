@@ -44,6 +44,8 @@
     { "source": "/trade", "destination": "/index.html" },
     { "source": "/trade/(.*)", "destination": "/index.html" },
     { "source": "/create", "destination": "/index.html" },
-    { "source": "/create/(.*)", "destination": "/index.html" }
+    { "source": "/create/(.*)", "destination": "/index.html" },
+    { "source": "/launches", "destination": "/index.html" },
+    { "source": "/launches/(.*)", "destination": "/index.html" }
   ]
 }

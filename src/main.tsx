@@ -34,6 +34,7 @@ const Terms = lazy(() => import('./Terms.tsx'))
 const WrapPage = lazy(() => import('./Wrap.tsx'))
 const Trade = lazy(() => import('./Trade.tsx'))
 const CreateCurve = lazy(() => import('./CreateCurve.tsx'))
+const Launches = lazy(() => import('./Launches.tsx'))
 
 // Derive the WebSocket endpoint from the HTTP RPC URL. @solana/web3.js does
 // this auto-derivation internally too, but doing it here means we can pin
@@ -86,6 +87,8 @@ const isWrap = path === '/wrap' || path.startsWith('/wrap/')
 const isTrade = path === '/trade' || path.startsWith('/trade/')
 // /create — launch a new bonding curve. Form + image upload via Vercel Blob.
 const isCreate = path === '/create' || path.startsWith('/create/')
+// /launches — dashboard of every curve on the launchpad.
+const isLaunches = path === '/launches' || path.startsWith('/launches/')
 // The dashboard (mint/burn/wrap/position) used to live at `/`. It now
 // lives at `/app` so `/` can serve the marketing landing without dragging
 // the wallet-adapter / Solana web3 chunk on first paint.
@@ -117,6 +120,7 @@ const isLanding =
   !isWrap &&
   !isTrade &&
   !isCreate &&
+  !isLaunches &&
   !isApp
 // Editorial routes render the shared EditorialNav (with its own
 // theme-toggle button), so we suppress the legacy top-right ThemeToggle on
@@ -129,6 +133,7 @@ const isEditorial =
   isWrap ||
   isTrade ||
   isCreate ||
+  isLaunches ||
   isPortfolio ||
   isLeaderboard ||
   isFaq
@@ -193,6 +198,13 @@ createRoot(document.getElementById('root')!).render(
         // /api/upload (Vercel Blob), then ixCurveCreate signs+sends.
         <Providers>
           <CreateCurve />
+        </Providers>
+      ) : isLaunches ? (
+        // /launches — dashboard of every curve indexed by stacc-backend.
+        // No wallet needed for browsing but Providers wraps so the
+        // shared WalletPill in the nav can connect on demand.
+        <Providers>
+          <Launches />
         </Providers>
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter
