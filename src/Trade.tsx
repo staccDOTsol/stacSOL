@@ -46,13 +46,11 @@ import WalletPill from './components/WalletPill'
 import { PriceChart } from './components/PriceChart'
 import { useTokenMetadata } from './hooks/useTokenMetadata'
 
-// Sanctum SPL stake-pool referral ATA — the stacc-launchpad referrer
-// receives a slice of each SOL→stacSOL deposit fee. Hardcoded because
-// the pool's referral cut goes to this single pubkey regardless of
-// individual launchpad curves.
-const STACC_REFERRAL_ATA = new PublicKey(
-  'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j',
-)
+// Note: the stacc-launchpad referral OWNER pubkey lives in
+// src/lib/sanctum-route.ts (STACC_REFERRAL_OWNER). buildBuy derives the
+// Token-2022 stacSOL ATA from it, idempotent-creates it, and passes the
+// derived ATA into the Sanctum DepositSol ix. Trade.tsx no longer
+// hard-codes a referral.
 
 const MEME_DECIMALS = 6 // matches DEFAULT_DECIMALS in curve-launchpad
 
@@ -259,7 +257,6 @@ export default function Trade() {
           global,
           bondingCurve: curve,
           feeRecipient,
-          referralAta: STACC_REFERRAL_ATA,
         })
         ixs.push(...built.ixs)
         appendLog(

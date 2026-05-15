@@ -21,13 +21,29 @@
 // reliability of landing.
 
 import { PublicKey, type TransactionInstruction } from '@solana/web3.js'
-import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
+import { TOKEN_PROGRAM_ID, getAssociatedTokenAddressSync } from '@solana/spl-token'
 import {
   ixCreateAtaIdempotent,
   ixDepositSol,
   ixWithdrawSol,
 } from './ix'
 import { MINT as QUOTE_MINT, TOKEN_2022 } from './constants'
+
+// Stacc-launchpad referral owner — receives a slice of every Sanctum
+// deposit-sol fee. The pool MintTo's stacSOL directly into this owner's
+// Token-2022 ATA, so the ATA must exist on-chain before the deposit ix
+// runs. buildBuy idempotent-creates it so first-time buyers don't trip
+// the Token-2022 MintTo with InvalidAccountData when the referral ATA
+// hasn't been provisioned yet.
+export const STACC_REFERRAL_OWNER = new PublicKey(
+  'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j',
+)
+const STACC_REFERRAL_ATA = getAssociatedTokenAddressSync(
+  QUOTE_MINT,
+  STACC_REFERRAL_OWNER,
+  true,
+  TOKEN_2022,
+)
 import type { PoolState } from './pool'
 import {
   ixCurveBuy,
@@ -212,7 +228,17 @@ export function buildBuy(args: BuildBuyArgs): BuiltBuy {
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, args.mint, TOKEN_PROGRAM_ID),
   )
-  ixs.push(ixDepositSol(args.user, args.solLamports, args.pool, args.referralAta))
+  // Ensure the stacc-launchpad referral ATA exists before the Sanctum
+  // DepositSol's Token-2022 MintTo CPI. If the ATA doesn't exist on
+  // chain (first deposit ever, or a fresh referral wallet), the MintTo
+  // fails with InvalidAccountData and the whole tx reverts.
+  const referralAta = args.referralAta ?? STACC_REFERRAL_ATA
+  if (referralAta.equals(STACC_REFERRAL_ATA)) {
+    ixs.push(
+      ixCreateAtaIdempotent(args.user, STACC_REFERRAL_OWNER, QUOTE_MINT, TOKEN_2022),
+    )
+  }
+  ixs.push(ixDepositSol(args.user, args.solLamports, args.pool, referralAta))
   ixs.push(
     ixCurveBuy({
       user: args.user,
