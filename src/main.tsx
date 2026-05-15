@@ -30,6 +30,7 @@ const Faq = lazy(() => import('./Faq.tsx'))
 const Leaderboard = lazy(() => import('./Leaderboard.tsx'))
 const Baitscope = lazy(() => import('./Baitscope.tsx'))
 const Liqmonsta = lazy(() => import('./Liqmonsta.tsx'))
+const Trade = lazy(() => import('./Trade.tsx'))
 
 // Derive the WebSocket endpoint from the HTTP RPC URL. @solana/web3.js does
 // this auto-derivation internally too, but doing it here means we can pin
@@ -76,6 +77,8 @@ const isFaq = path === '/faq' || path.startsWith('/faq/')
 const isLeaderboard = path === '/leaderboard' || path.startsWith('/leaderboard/')
 const isBaitscope = path === '/baitscope' || path.startsWith('/baitscope/')
 const isLiqmonsta = path === '/liqmonsta' || path.startsWith('/liqmonsta/')
+// /trade — curve-launchpad buy/sell UI. SOL in, SOL out, LST in the middle.
+const isTrade = path === '/trade' || path.startsWith('/trade/')
 // The dashboard (mint/burn/wrap/position) used to live at `/`. It now
 // lives at `/app` so `/` can serve the marketing landing without dragging
 // the wallet-adapter / Solana web3 chunk on first paint.
@@ -125,6 +128,13 @@ createRoot(document.getElementById('root')!).render(
       ) : isLiqmonsta ? (
         <Providers>
           <Liqmonsta />
+        </Providers>
+      ) : isTrade ? (
+        // /trade — curve-launchpad buy/sell, transparently routed through
+        // stacSOL as the quote token. User sees SOL in / SOL out. See
+        // src/Trade.tsx + src/lib/sanctum-route.ts.
+        <Providers>
+          <Trade />
         </Providers>
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter
