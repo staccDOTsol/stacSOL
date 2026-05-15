@@ -165,14 +165,23 @@ export function buildBuy(args: BuildBuyArgs): BuiltBuy {
   // the program returns InsufficientQuote (0x1776). Re-derive the largest
   // tokenAmount that fits inside `lstExpected` minus a 1% safety margin to
   // absorb the Sanctum transfer-fee gross-up + rounding.
+  // stacSOL is Token-2022 with a 6.9% TransferFee. buy.rs grosses up
+  // every quote-side transfer so the receiver nets the AMM-computed
+  // amount. The user's stacSOL ATA must therefore hold ~7.4% MORE than
+  // the AMM quote+fee. Compute a safety budget that already discounts
+  // by (transferFee + small rounding margin) so any tokenAmount sized
+  // to it lands without InsufficientQuote (0x1776).
+  const TRANSFER_FEE_BPS = 690n
+  const SAFETY_BPS = 50n
+  const safetyBudget =
+    (lstExpected * (10000n - TRANSFER_FEE_BPS - SAFETY_BPS)) / 10000n
   let effectiveTokenAmount = args.tokenAmount
   const naivePreview = previewBuy(
     args.bondingCurve,
     args.tokenAmount,
     args.global.feeBasisPoints,
   )
-  if (naivePreview.totalQuote > lstExpected) {
-    const safetyBudget = padDown(lstExpected, 100n) // 1% below the actual mint
+  if (naivePreview.totalQuote > safetyBudget) {
     effectiveTokenAmount = maxTokensForBudget(
       args.bondingCurve,
       safetyBudget,

@@ -18,7 +18,6 @@ import {
   useConnection,
   useWallet,
 } from '@solana/wallet-adapter-react'
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 import {
   ComputeBudgetProgram,
   LAMPORTS_PER_SOL,
@@ -42,6 +41,16 @@ import {
 } from './lib/curve-launchpad'
 import { buildBuy, buildSell, previewSolToLst, previewLstToSol } from './lib/sanctum-route'
 import { fireBurn, fireMint, shake, summarizeError } from './lib/confetti'
+import EditorialNav from './components/EditorialNav'
+import WalletPill from './components/WalletPill'
+
+// Sanctum SPL stake-pool referral ATA — the stacc-launchpad referrer
+// receives a slice of each SOL→stacSOL deposit fee. Hardcoded because
+// the pool's referral cut goes to this single pubkey regardless of
+// individual launchpad curves.
+const STACC_REFERRAL_ATA = new PublicKey(
+  'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j',
+)
 
 const MEME_DECIMALS = 6 // matches DEFAULT_DECIMALS in curve-launchpad
 
@@ -160,10 +169,21 @@ export default function Trade() {
       // SOL → LST → MEME estimation
       const lamports = BigInt(Math.floor(numericAmt * LAMPORTS_PER_SOL))
       const lstAtoms = previewSolToLst(lamports, pool)
+      // stacSOL is Token-2022 with a 6.9% TransferFee. buy.rs grosses up
+      // every quote-side transfer (curve deposit + fee-recipient transfer)
+      // so the receiver nets the AMM-computed amount. That means the
+      // user_quote_account must have at least quote / (1 - 0.069) atoms,
+      // i.e. ~7.4% more than the AMM's `quote_amount`. If we don't bake
+      // that into the inverse here, the on-chain check fails with
+      // InsufficientQuote (program error 0x1776). A small extra 50 bps
+      // safety covers rounding + the curve's own fee on the gross-up.
+      const TRANSFER_FEE_BPS = 690n
+      const SAFETY_BPS = 50n
+      const lstBudget = (lstAtoms * (10000n - TRANSFER_FEE_BPS - SAFETY_BPS)) / 10000n
       // Invert curve buy: given LST in (after fee), find MEME out. Closed form
       // is straightforward — x = product / (Q + lstAfterCurveFee) - virtTok.
       const feeBps = global.feeBasisPoints
-      const lstAfterCurveFee = (lstAtoms * 10000n) / (10000n + feeBps)
+      const lstAfterCurveFee = (lstBudget * 10000n) / (10000n + feeBps)
       const product = curve.virtualQuoteReserves * curve.virtualTokenReserves
       const newVirtTok = product / (curve.virtualQuoteReserves + lstAfterCurveFee)
       const memeOut =
@@ -236,6 +256,7 @@ export default function Trade() {
           global,
           bondingCurve: curve,
           feeRecipient,
+          referralAta: STACC_REFERRAL_ATA,
         })
         ixs.push(...built.ixs)
         appendLog(
@@ -286,6 +307,23 @@ export default function Trade() {
       }
 
       setStatus({ state: 'sending', message: 'broadcasting…' })
+      // Pre-flight simulation so we see *which* instruction + *which*
+      // account is the culprit when the program reverts. The log lines
+      // surface in the in-page log panel for easy paste-to-Claude
+      // debugging.
+      try {
+        const simTx = VersionedTransaction.deserialize(signedSerialized)
+        const sim = await connection.simulateTransaction(simTx, {
+          sigVerify: false,
+          commitment: 'confirmed',
+        })
+        if (sim.value.err) {
+          appendLog(`sim err: ${JSON.stringify(sim.value.err)}`)
+          for (const l of (sim.value.logs ?? []).slice(-12)) appendLog(`sim · ${l}`)
+        }
+      } catch (simErr) {
+        appendLog(`sim exception: ${(simErr as Error).message?.slice(0, 120)}`)
+      }
       const sig = await connection.sendRawTransaction(signedSerialized)
       appendLog(`${mode} sent: ${sig}`)
       setStatus({ state: 'confirming', message: 'waiting for confirmation…', signature: sig })
@@ -330,16 +368,16 @@ export default function Trade() {
   // -------------- render --------------
   if (!mint) {
     return (
-      <main style={{ maxWidth: 720, margin: '0 auto', padding: '96px 24px' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 32 }}>
-          <WalletMultiButton />
-        </div>
-        <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.01em' }}>Trade</h1>
-        <p style={{ marginTop: 12, color: 'var(--color-dim, #999)' }}>
-          No curve selected. Append <code>?mint=&lt;pubkey&gt;</code> to the URL to load a
-          launchpad curve.
-        </p>
-      </main>
+      <>
+        <EditorialNav pathname="/trade" ctaSlot={<WalletPill />} />
+        <main style={{ maxWidth: 720, margin: '0 auto', padding: '96px 24px' }}>
+          <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.01em' }}>Trade</h1>
+          <p style={{ marginTop: 12, color: 'var(--color-dim, #999)' }}>
+            No curve selected. Append <code>?mint=&lt;pubkey&gt;</code> to the URL to load a
+            launchpad curve.
+          </p>
+        </main>
+      </>
     )
   }
 
@@ -371,10 +409,8 @@ export default function Trade() {
 
   return (
     <>
+      <EditorialNav pathname="/trade" ctaSlot={<WalletPill />} />
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px 96px' }}>
-        <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 32 }}>
-          <WalletMultiButton />
-        </div>
         <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.01em' }}>Trade</h1>
         <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-dim, #888)' }}>
           curve {mint.toBase58().slice(0, 6)}…{mint.toBase58().slice(-6)} ·{' '}
