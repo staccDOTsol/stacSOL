@@ -26,10 +26,11 @@ import {
 } from '@solana/web3.js'
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
   TOKEN_PROGRAM_ID,
   getAssociatedTokenAddressSync,
 } from '@solana/spl-token'
-import { MINT as QUOTE_MINT, TOKEN_2022 } from './constants'
+import { MINT as QUOTE_MINT } from './constants'
 
 // Curve-launchpad program ID (declared in curve-launchpad/src/lib.rs).
 export const CURVE_LAUNCHPAD_PROGRAM_ID = new PublicKey(
@@ -47,6 +48,7 @@ function deriveEventAuthority(programId: PublicKey): PublicKey {
 
 const GLOBAL_SEED = Buffer.from('global')
 const BONDING_CURVE_SEED = Buffer.from('bonding-curve')
+const LAST_WITHDRAW_SEED = Buffer.from('last-withdraw')
 
 export function deriveGlobal(programId = CURVE_LAUNCHPAD_PROGRAM_ID): PublicKey {
   return PublicKey.findProgramAddressSync([GLOBAL_SEED], programId)[0]
@@ -62,6 +64,12 @@ export function deriveBondingCurve(
   )[0]
 }
 
+export function deriveLastWithdraw(
+  programId = CURVE_LAUNCHPAD_PROGRAM_ID,
+): PublicKey {
+  return PublicKey.findProgramAddressSync([LAST_WITHDRAW_SEED], programId)[0]
+}
+
 // ---------------------------------------------------------------------------
 // Anchor discriminators — sha256("global:<ix_name>")[..8]
 // Pre-computed so this module is sync-friendly (no top-level await).
@@ -74,6 +82,10 @@ const BUY_DISCRIMINATOR = new Uint8Array([
 /** sha256("global:sell")[..8] */
 const SELL_DISCRIMINATOR = new Uint8Array([
   51, 230, 133, 164, 1, 127, 131, 173,
+])
+/** sha256("global:withdraw")[..8] */
+const WITHDRAW_DISCRIMINATOR = new Uint8Array([
+  183, 18, 70, 156, 148, 109, 161, 34,
 ])
 
 const u64le = (v: bigint | number) => {
@@ -140,24 +152,24 @@ function resolveAccounts(args: TradeAccounts): ResolvedTradeAccounts {
     false,
     TOKEN_PROGRAM_ID,
   )
-  // Quote (stacSOL) is Token-2022.
+  // Quote (stacSOL) is Token-2022 — derive its ATAs with the Token-2022 program id.
   const bondingCurveQuoteAccount = getAssociatedTokenAddressSync(
     quoteMint,
     bondingCurve,
     true,
-    TOKEN_2022,
+    TOKEN_2022_PROGRAM_ID,
   )
   const userQuoteAccount = getAssociatedTokenAddressSync(
     quoteMint,
     user,
     false,
-    TOKEN_2022,
+    TOKEN_2022_PROGRAM_ID,
   )
   const feeRecipientQuoteAccount = getAssociatedTokenAddressSync(
     quoteMint,
     feeRecipient,
     true,
-    TOKEN_2022,
+    TOKEN_2022_PROGRAM_ID,
   )
 
   return {
@@ -212,12 +224,12 @@ export function ixCurveBuy(params: BuyParams): TransactionInstruction {
       { pubkey: a.userQuoteAccount, isSigner: false, isWritable: true },
       { pubkey: a.feeRecipientQuoteAccount, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
-      // The program declares `token_program: Program<'info, Token>` (legacy
-      // SPL Token) — used to move MEME between curve ↔ user. The quote ATA
-      // transfers will need Token-2022 once the program is updated to be
-      // mixed-token aware. For now we pass legacy Token to satisfy the
-      // declared constraint; flagged in SPEC.md follow-up.
+      // Two distinct token-program slots:
+      // - `token_program` (legacy SPL Token) — moves MEME between curve ↔ user.
+      // - `quote_token_program` (Token-2022) — moves stacSOL between
+      //   user/curve/fee-recipient with TransferChecked + TransferFee.
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       // #[event_cpi] trailing accounts
       { pubkey: a.eventAuthority, isSigner: false, isWritable: false },
@@ -253,12 +265,91 @@ export function ixCurveSell(params: SellParams): TransactionInstruction {
       { pubkey: a.userQuoteAccount, isSigner: false, isWritable: true },
       { pubkey: a.feeRecipientQuoteAccount, isSigner: false, isWritable: true },
       { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      // Legacy SPL Token for the MEME side, Token-2022 for the LST quote side.
       { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
       { pubkey: a.eventAuthority, isSigner: false, isWritable: false },
       { pubkey: a.program, isSigner: false, isWritable: false },
     ],
     data: Buffer.from(data),
+  })
+}
+
+// ---------------------------------------------------------------------------
+// withdraw ix
+//
+// Drains the bonding curve's MEME + LST reserves to the withdraw authority
+// after the curve completes. Account ordering matches
+// `programs/curve-launchpad/src/instructions/withdraw.rs` — note that the
+// Withdraw struct is NOT `#[event_cpi]` (no trailing event_authority/program),
+// has no fee_recipient, and orders the programs as `associated_token_program,
+// system_program, token_program, quote_token_program`.
+// ---------------------------------------------------------------------------
+
+export interface WithdrawParams {
+  /** The withdraw authority — must match `Global.withdraw_authority`. */
+  user: PublicKey
+  /** MEME mint of the curve being drained. */
+  mint: PublicKey
+  /** Defaults to the stacSOL mint. Must match `Global.quote_mint`. */
+  quoteMint?: PublicKey
+}
+
+export function ixCurveWithdraw(params: WithdrawParams): TransactionInstruction {
+  const { user, mint } = params
+  const quoteMint = params.quoteMint ?? QUOTE_MINT
+
+  const global = deriveGlobal()
+  const lastWithdraw = deriveLastWithdraw()
+  const bondingCurve = deriveBondingCurve(mint)
+  // MEME side: legacy SPL Token program.
+  const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
+    mint,
+    bondingCurve,
+    true,
+    TOKEN_PROGRAM_ID,
+  )
+  const userTokenAccount = getAssociatedTokenAddressSync(
+    mint,
+    user,
+    false,
+    TOKEN_PROGRAM_ID,
+  )
+  // Quote (stacSOL) side: Token-2022.
+  const bondingCurveQuoteAccount = getAssociatedTokenAddressSync(
+    quoteMint,
+    bondingCurve,
+    true,
+    TOKEN_2022_PROGRAM_ID,
+  )
+  const userQuoteAccount = getAssociatedTokenAddressSync(
+    quoteMint,
+    user,
+    false,
+    TOKEN_2022_PROGRAM_ID,
+  )
+
+  return new TransactionInstruction({
+    programId: CURVE_LAUNCHPAD_PROGRAM_ID,
+    keys: [
+      { pubkey: user, isSigner: true, isWritable: true },
+      { pubkey: global, isSigner: false, isWritable: false },
+      { pubkey: mint, isSigner: false, isWritable: false },
+      { pubkey: quoteMint, isSigner: false, isWritable: false },
+      { pubkey: lastWithdraw, isSigner: false, isWritable: true },
+      { pubkey: bondingCurve, isSigner: false, isWritable: true },
+      { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: bondingCurveQuoteAccount, isSigner: false, isWritable: true },
+      { pubkey: userTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: userQuoteAccount, isSigner: false, isWritable: true },
+      // Withdraw orders the program slots as ATA, system, token, quote_token.
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_2022_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(WITHDRAW_DISCRIMINATOR),
   })
 }
 
