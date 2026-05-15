@@ -10,7 +10,7 @@
 //   5. Wallet signs, send, confirm.
 //   6. On success, route the user to /trade?mint=<new mint pubkey>.
 
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   Connection,
   Keypair,
@@ -20,9 +20,10 @@ import {
   VersionedTransaction,
 } from '@solana/web3.js'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
 
 import { ixCurveCreate } from './lib/curve-launchpad'
+import EditorialNav from './components/EditorialNav'
+import WalletPill from './components/WalletPill'
 
 interface UploadResponse {
   imageUrl: string
@@ -101,6 +102,13 @@ async function buildAndSendCreateTx(args: {
 export default function CreateCurve() {
   const { connection } = useConnection()
   const { publicKey, signTransaction } = useWallet()
+
+  // Editorial-design tokens (ivory/jade/ink) are scoped via
+  // body[data-design="editorial"]; turn them on for this route only.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
 
   const [name, setName] = useState('')
   const [symbol, setSymbol] = useState('')
@@ -198,17 +206,16 @@ export default function CreateCurve() {
   }
 
   return (
-    <div className="mx-auto max-w-2xl px-4 py-10">
-      <header className="mb-8 flex items-center justify-between gap-4">
-        <div>
+    <>
+      <EditorialNav pathname="/create" ctaSlot={<WalletPill />} />
+      <div className="mx-auto max-w-2xl px-4 py-10">
+        <header className="mb-8">
           <h1 className="text-3xl font-semibold tracking-tight">launch a curve</h1>
           <p className="mt-1 text-sm text-neutral-500">
             mint a new token on the stacc curve-launchpad. quote token is
             stacSOL (yield-bearing). freeze authority is auto-revoked at launch.
           </p>
-        </div>
-        <WalletMultiButton />
-      </header>
+        </header>
 
       <div className="grid gap-5">
         <label className="block">
@@ -388,7 +395,8 @@ export default function CreateCurve() {
             {status.message}
           </div>
         )}
+        </div>
       </div>
-    </div>
+    </>
   )
 }

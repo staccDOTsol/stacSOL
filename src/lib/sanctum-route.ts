@@ -21,6 +21,7 @@
 // reliability of landing.
 
 import { PublicKey, type TransactionInstruction } from '@solana/web3.js'
+import { TOKEN_PROGRAM_ID } from '@solana/spl-token'
 import {
   ixCreateAtaIdempotent,
   ixDepositSol,
@@ -146,12 +147,15 @@ export function buildBuy(args: BuildBuyArgs): BuiltBuy {
   const maxQuoteCost = paddedLst < preview.totalQuote ? padUp(preview.totalQuote, slippageBps) : paddedLst
 
   const ixs: TransactionInstruction[] = []
-  // The Sanctum DepositSol ix only takes a stacSOL ATA for the depositor;
-  // the referral ATA is required to exist by the pool program. The curve's
-  // `init_if_needed` covers the user/fee-recipient quote ATAs but we still
-  // ensure the user's MEME ATA exists ahead of the curve transfer.
+  // The Sanctum DepositSol ix only takes a stacSOL ATA for the depositor.
+  // The curve's buy ix REQUIRES `user_token_account` (MEME ATA) and
+  // `user_quote_account` (stacSOL ATA) to already exist — neither uses
+  // init_if_needed in buy.rs. Pre-create both idempotently.
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, QUOTE_MINT, TOKEN_2022),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, args.user, args.mint, TOKEN_PROGRAM_ID),
   )
   ixs.push(ixDepositSol(args.user, args.solLamports, args.pool, args.referralAta))
   ixs.push(
@@ -219,8 +223,17 @@ export function buildSell(args: BuildSellArgs): BuiltSell {
   const solExpected = previewLstToSol(lstToBurn, args.pool)
 
   const ixs: TransactionInstruction[] = []
+  // Same ATA-existence guard as the buy path. Sell needs both the
+  // stacSOL ATA (where the curve deposits LST proceeds) and the MEME
+  // ATA (where the curve's quote-side transfer pulls MEME from — which
+  // the user owns and presumably already has from a prior buy, but
+  // create-idempotent is cheap and the sell-with-zero-balance case
+  // surfaces a clearer error from the program rather than ATA missing).
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, QUOTE_MINT, TOKEN_2022),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, args.user, args.mint, TOKEN_PROGRAM_ID),
   )
   ixs.push(
     ixCurveSell({

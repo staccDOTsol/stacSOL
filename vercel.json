@@ -19,6 +19,8 @@
   ],
   "rewrites": [
     { "source": "/api/hawkfi/:path*", "destination": "/api/hawkfi?_path=/:path*" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/(.*)", "destination": "/index.html" },
     { "source": "/guide", "destination": "/index.html" },
     { "source": "/guide/(.*)", "destination": "/index.html" },
     { "source": "/liquidity", "destination": "/index.html" },
@@ -34,6 +36,14 @@
     { "source": "/baitscope", "destination": "/index.html" },
     { "source": "/baitscope/(.*)", "destination": "/index.html" },
     { "source": "/liqmonsta", "destination": "/index.html" },
-    { "source": "/liqmonsta/(.*)", "destination": "/index.html" }
+    { "source": "/liqmonsta/(.*)", "destination": "/index.html" },
+    { "source": "/terms", "destination": "/index.html" },
+    { "source": "/terms/(.*)", "destination": "/index.html" },
+    { "source": "/wrap", "destination": "/index.html" },
+    { "source": "/wrap/(.*)", "destination": "/index.html" },
+    { "source": "/trade", "destination": "/index.html" },
+    { "source": "/trade/(.*)", "destination": "/index.html" },
+    { "source": "/create", "destination": "/index.html" },
+    { "source": "/create/(.*)", "destination": "/index.html" }
   ]
 }

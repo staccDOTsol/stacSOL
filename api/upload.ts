@@ -8,13 +8,19 @@
 //
 // BLOB_READ_WRITE_TOKEN is sourced from process.env. Keep it server-side only;
 // never inline into client bundles.
+//
+// Multipart parsing uses `formidable` (battle-tested) — earlier hand-rolled
+// loop didn't reliably get the body in vercel-dev because @vercel/node's
+// runtime had already consumed the stream.
 
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { put } from '@vercel/blob'
+import formidable from 'formidable'
+import { readFile } from 'node:fs/promises'
 
 export const config = {
   api: {
-    bodyParser: false, // we need the raw multipart body
+    bodyParser: false, // formidable owns the body
   },
 }
 
@@ -30,50 +36,31 @@ interface MetadataJson {
   createdAt: string
 }
 
-async function readMultipart(req: VercelRequest): Promise<{
-  fields: Record<string, string>
-  file: { name: string; type: string; buffer: Buffer } | null
+function fieldVal(v: string | string[] | undefined): string {
+  if (!v) return ''
+  return Array.isArray(v) ? v[0] ?? '' : v
+}
+
+async function parseForm(req: VercelRequest): Promise<{
+  fields: formidable.Fields
+  file: formidable.File | null
 }> {
-  const contentType = req.headers['content-type'] ?? ''
-  const match = contentType.match(/boundary=([^;]+)/i)
-  if (!match) throw new Error('missing multipart boundary')
-  const boundary = `--${match[1].trim()}`
-
-  // Buffer the whole body. For metadata uploads (a meme image, a few KB of
-  // text), this is fine. If we ever accept video we'd want streaming.
-  const chunks: Buffer[] = []
-  for await (const chunk of req) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : (chunk as Buffer))
-  }
-  const body = Buffer.concat(chunks)
-  const parts = body.toString('binary').split(boundary).slice(1, -1)
-
-  const fields: Record<string, string> = {}
-  let file: { name: string; type: string; buffer: Buffer } | null = null
-
-  for (const part of parts) {
-    const headerEnd = part.indexOf('\r\n\r\n')
-    if (headerEnd < 0) continue
-    const headerBlock = part.slice(2, headerEnd) // strip leading \r\n
-    const rawBody = part.slice(headerEnd + 4, part.length - 2) // strip trailing \r\n
-    const dispositionMatch = headerBlock.match(/name="([^"]+)"(?:; filename="([^"]+)")?/i)
-    if (!dispositionMatch) continue
-    const fieldName = dispositionMatch[1]
-    const fileName = dispositionMatch[2]
-    if (fileName) {
-      const typeMatch = headerBlock.match(/Content-Type:\s*([^\r\n]+)/i)
-      const type = typeMatch ? typeMatch[1].trim() : 'application/octet-stream'
-      file = {
-        name: fileName,
-        type,
-        buffer: Buffer.from(rawBody, 'binary'),
+  const form = formidable({
+    multiples: false,
+    maxFileSize: 8 * 1024 * 1024, // 8 MB — meme images, not videos
+    keepExtensions: true,
+  })
+  return new Promise((resolve, reject) => {
+    form.parse(req, (err, fields, files) => {
+      if (err) {
+        reject(err)
+        return
       }
-    } else {
-      fields[fieldName] = Buffer.from(rawBody, 'binary').toString('utf-8')
-    }
-  }
-
-  return { fields, file }
+      const f = files.image
+      const file = Array.isArray(f) ? f[0] ?? null : (f ?? null)
+      resolve({ fields, file })
+    })
+  })
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -87,8 +74,9 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   }
 
   try {
-    const { fields, file } = await readMultipart(req)
-    const { name, symbol } = fields
+    const { fields, file } = await parseForm(req)
+    const name = fieldVal(fields.name).trim()
+    const symbol = fieldVal(fields.symbol).trim()
     if (!name || !symbol) {
       res.status(400).json({ error: 'name and symbol are required' })
       return
@@ -98,27 +86,28 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return
     }
 
-    // Upload image first so we have the public URL for the metadata JSON.
+    const buf = await readFile(file.filepath)
+
     const slug = symbol.toLowerCase().replace(/[^a-z0-9]/g, '').slice(0, 16)
     const ts = Date.now().toString(36)
-    const ext = (file.name.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'png').toLowerCase()
+    const ext = (file.originalFilename?.match(/\.([a-z0-9]+)$/i)?.[1] ?? 'png').toLowerCase()
     const imagePath = `stacc-launchpad/${slug}-${ts}.${ext}`
 
-    const imageBlob = await put(imagePath, file.buffer, {
+    const imageBlob = await put(imagePath, buf, {
       access: 'public',
-      contentType: file.type,
+      contentType: file.mimetype ?? 'image/png',
       token: process.env.BLOB_READ_WRITE_TOKEN,
     })
 
     const metadata: MetadataJson = {
       name,
       symbol,
-      description: fields.description?.slice(0, 1000),
+      description: fieldVal(fields.description).trim().slice(0, 1000) || undefined,
       image: imageBlob.url,
       showName: true,
-      twitter: fields.twitter || undefined,
-      website: fields.website || undefined,
-      telegram: fields.telegram || undefined,
+      twitter: fieldVal(fields.twitter).trim() || undefined,
+      website: fieldVal(fields.website).trim() || undefined,
+      telegram: fieldVal(fields.telegram).trim() || undefined,
       createdAt: new Date().toISOString(),
     }
 
