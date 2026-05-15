@@ -12,6 +12,7 @@ import { useEffect } from 'react'
 import { ConnectionProvider } from '@solana/wallet-adapter-react'
 import { RPC_URL } from './lib/constants'
 import { usePool } from './hooks/usePool'
+import EditorialNav from './components/EditorialNav'
 
 export default function Faq() {
   useEffect(() => {
@@ -22,13 +23,20 @@ export default function Faq() {
     }
   }, [])
 
+  // Opt into the editorial palette — internal Tailwind utilities remap
+  // through the body[data-design="editorial"] var aliases in index.css.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
+
   return (
     // We wrap in a ConnectionProvider so usePool() can read live pool state,
     // but no WalletProvider — FAQ is read-only and doesn't need to sign
     // anything. Keeps the bundle small.
     <ConnectionProvider endpoint={RPC_URL} config={{ commitment: 'confirmed' }}>
       <div className="min-h-screen text-[var(--color-fg)]">
-        <Nav />
+        <EditorialNav pathname="/faq" />
         <Hero />
         <LiveStats />
         <Section title="Contact">
@@ -820,26 +828,9 @@ function BankrunMath() {
 }
 
 // -----------------------------------------------------------------------------
-// Layout primitives.
+// Layout primitives. Legacy Nav() replaced by the shared EditorialNav in
+// components/.
 // -----------------------------------------------------------------------------
-
-function Nav() {
-  return (
-    <div className="sticky top-0 z-20 bg-[rgba(8,2,3,0.85)] backdrop-blur border-b border-[rgb(255_34_0_/_0.15)]">
-      <div className="max-w-[860px] mx-auto px-6 py-3 flex items-center justify-between">
-        <a
-          href="/"
-          className="text-[11px] font-black uppercase tracking-[3px] text-[var(--color-hot)] no-underline [text-shadow:0_0_8px_rgba(255,34,0,0.5)]"
-        >
-          ← stacsol.app
-        </a>
-        <span className="text-[10px] font-black uppercase tracking-[3px] text-[var(--color-dim)]">
-          frequently asked
-        </span>
-      </div>
-    </div>
-  )
-}
 
 function Hero() {
   return (

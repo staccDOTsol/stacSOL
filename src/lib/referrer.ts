@@ -52,7 +52,7 @@ const URL_PARAM = 'ref'
  *  recovery via WithdrawSol). Treated as the SOURCE OF TRUTH for "default
  *  referrer" — update here when rotating. */
 export const MARKETING_REFERRER = new PublicKey(
-  'WzMaL78srutrF6CsxEkWuhMaDF5HZA6jNRaEPengqpb',
+  'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j',
 )
 
 /** Validate a base58 string as a Solana PublicKey. We deliberately accept

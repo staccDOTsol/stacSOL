@@ -53,6 +53,11 @@ export function Action({
   const { connection } = useConnection()
   const { publicKey, signTransaction } = useWallet()
   const [amt, setAmt] = useState('')
+  // Set by the 100% / max button on burn so submit can use the exact bigint
+  // (balance − 1 atom) instead of re-parsing the displayed string and risking
+  // a round-up that pushes us over the actual on-chain balance. Cleared on
+  // any manual edit to the input.
+  const [exactAtoms, setExactAtoms] = useState<bigint | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<ActionStatus | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
@@ -80,11 +85,23 @@ export function Action({
 
   const setPercent = (pct: number) => {
     if (maxAvailable == null) return
+    // Burn 100% needs to land EXACTLY at balance - 1 atom. Going through
+    // float UI and back to bigint at submit time can round UP (e.g.
+    // 0.7477006 → toFixed(6) → "0.747701" → 747701000 atoms, over the
+    // actual 747700600 balance) and the WithdrawSol fails on
+    // InsufficientFunds. Keep the exact bigint here and let submit use it.
+    if (mode === 'burn' && pct === 100 && position && position.balance > 0n) {
+      const atoms = position.balance - 1n
+      setExactAtoms(atoms)
+      setAmt((Number(atoms) / Math.pow(10, DECIMALS)).toFixed(9))
+      return
+    }
     let raw =
       mode === 'mint' && pct === 100
         ? maxAvailable - SOL_RESERVE_AT_MAX
         : (maxAvailable * pct) / 100
     if (raw < 0) raw = 0
+    setExactAtoms(null)
     // Trim to 6 decimals — input step is 0.001 but lamport precision is 9.
     setAmt(raw > 0 ? raw.toFixed(6) : '')
   }
@@ -135,6 +152,9 @@ export function Action({
         if (!userAtaExists) {
           ixs.push(ixCreateAtaIdempotent(publicKey, publicKey, MINT))
         }
+        // Repeat ATA precheck and create for both REFERRER and MANAGER fee ATAs.
+
+        // 1. Referrer ATA
         if (referralAta && !referralAtaExists) {
           // Note: still uses `Idempotent` variant in case of a race —
           // safe even if another tx creates it between our check and the
@@ -147,9 +167,24 @@ export function Action({
           )
         }
 
+        // In accInfos, managerAta is always after userAta and (if present) referralAta.
+        // So its index is 1 (if no referralAta), or 2 (if referralAta exists).
+        const managerAtaIdx = referralAta ? 2 : 1
+        const managerAtaExists = accInfos[managerAtaIdx] != null
+        if (!managerAtaExists) {
+          ixs.push(ixCreateAtaIdempotent(publicKey, pool.managerFeeAccount, MINT))
+        }
+
         ixs.push(ixDepositSol(publicKey, lamports, pool, referralAta))
       } else {
-        const tokens = BigInt(Math.floor(value * Math.pow(10, DECIMALS)))
+        // Prefer the exact atom count captured by the 100%/max button
+        // when present — round-tripping through the displayed string can
+        // round up by 1 atom on certain balances and the burn would fail
+        // on InsufficientFunds. Manual typing clears exactAtoms.
+        const tokens =
+          exactAtoms != null
+            ? exactAtoms
+            : BigInt(Math.floor(value * Math.pow(10, DECIMALS)))
         ixs.push(ixWithdrawSol(publicKey, tokens, pool))
       }
 
@@ -242,6 +277,7 @@ export function Action({
         if (mode === 'mint') fireMint()
         else fireBurn()
         setAmt('')
+        setExactAtoms(null)
       }
       onDone()
     } catch (e) {
@@ -342,7 +378,12 @@ export function Action({
             min="0"
             step="0.001"
             value={amt}
-            onChange={(e) => setAmt(e.target.value)}
+            onChange={(e) => {
+              // Manual edit invalidates the captured 100%/max bigint —
+              // re-parse from the input string on submit.
+              setExactAtoms(null)
+              setAmt(e.target.value)
+            }}
             placeholder={placeholder}
             className="w-full px-3 py-2 bg-[var(--color-bg)] text-[var(--color-fg)] border border-[rgb(255_51_0_/_0.4)] rounded font-[inherit] focus:outline-none focus:border-[var(--color-hot)]"
           />
@@ -377,7 +418,10 @@ export function Action({
         {earnedHint?.kind === 'ready' && (
           <button
             type="button"
-            onClick={() => setAmt(earnedHint.burnStac.toFixed(6))}
+            onClick={() => {
+              setExactAtoms(null)
+              setAmt(earnedHint.burnStac.toFixed(6))
+            }}
             disabled={busy}
             className="mt-3 w-full px-3 py-3 text-left rounded border-2 border-[var(--color-green)] bg-[rgb(34_238_136_/_0.06)] hover:bg-[rgb(34_238_136_/_0.12)] transition disabled:opacity-40 disabled:cursor-not-allowed"
           >

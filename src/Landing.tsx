@@ -1,523 +1,851 @@
-// Marketing landing for stacSOL.app — replaces the old dashboard at `/`.
+// Marketing landing for stacSOL.app — editorial redesign.
+// Single elegant system: ivory ground, ink type, jade accent.
+// Replaces the old marquee/mint-lime treatment.
 //
-// Visual language is intentionally separate from the app's fire/red theme:
-// near-black backdrops with a mint-green accent + lime kicker, modeled on
-// the reference design at https://bwagsieclwpdo.kimi.page. The dashboard
-// (mint / burn / wrap / position) lives at /app and keeps its existing
-// look — this page is purely a marketing surface that funnels users into
-// the actual product.
-//
-// No wallet provider is mounted here — the page is fully static so it can
-// be rendered without dragging the wallet-adapter chunk. Every CTA links
-// to /app (or another route) where the heavy bundle loads on demand.
-//
-// One small live data hit: the "1.xxx+" tile and the in-line NAV mention
-// pull the latest pool NAV from /api/history?limit=1 (single small JSON
-// row, edge-cached for 10s). Everything else is static copy.
+// No wallet provider mounted here — fully static so the wallet-adapter
+// chunk doesn't load on first paint. Live data comes from /api/history
+// only (small JSON, edge-cached). All CTAs link to /app where the heavy
+// bundle loads on demand.
 
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useState } from 'react'
+import EditorialNav from './components/EditorialNav'
+import { MINT, POOL } from './lib/constants'
 
-// Latest pool NAV, formatted as "1.xxx" with three decimals. Fetched
-// lazily on mount; falls back to "1.000" while in flight or on failure
-// so the layout never goes empty. The history endpoint already caches
-// at the edge so this is cheap to call on every landing pageview.
-function useLatestNav(): { display: string; raw: number | null } {
-  const [nav, setNav] = useState<number | null>(null)
-  useEffect(() => {
-    let cancelled = false
-    fetch('/api/history?limit=1')
-      .then((r) => (r.ok ? r.json() : null))
-      .then((rows: { rate?: number }[] | null) => {
-        if (cancelled) return
-        const r = rows?.[0]?.rate
-        if (typeof r === 'number' && Number.isFinite(r) && r > 0) {
-          setNav(r)
-        }
-      })
-      .catch(() => {
-        /* swallow — fall back to baseline 1.000 */
-      })
-    return () => {
-      cancelled = true
+// -----------------------------------------------------------------------------
+// Live perf hook — derives doubling time and "SOL to print $100/day" from
+// /api/history + CoinGecko. Mirrors the design prototype's useLivePerf but
+// pulls from the project's existing /api/history endpoint shape.
+// -----------------------------------------------------------------------------
+
+interface PerfState {
+  rate: number | null
+  dailyRate: number | null
+  doublingDays: number | null
+  solFor100: number | null
+  solUsd: number
+  loading: boolean
+  liveRate: boolean
+  liveHistory: boolean
+  livePrice: boolean
+}
+
+const INITIAL: PerfState = {
+  rate: null,
+  dailyRate: null,
+  doublingDays: null,
+  solFor100: null,
+  solUsd: 222,
+  loading: true,
+  liveRate: false,
+  liveHistory: false,
+  livePrice: false,
+}
+
+// Public Solana RPC — CORS-open, no API key needed. We use it instead of
+// /api/history because the landing page is served outside of a
+// ConnectionProvider and (in `vite dev`) Vercel serverless functions
+// aren't running, so /api/* returns 404. Direct RPC works in dev and prod.
+const PUBLIC_RPC = 'https://solana-rpc.publicnode.com'
+
+/** JSON-RPC getMultipleAccounts → decodes the SPL stake-pool struct and the
+ *  Token-2022 mint to compute the current redemption rate exactly the same
+ *  way lib/pool.ts does server-side. Returns null on any failure (CORS,
+ *  network, decode) so the UI can show "—" instead of a fake rate. */
+async function fetchLiveRate(): Promise<number | null> {
+  try {
+    const body = {
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'getMultipleAccounts',
+      params: [
+        [POOL.toBase58(), MINT.toBase58()],
+        { encoding: 'base64', commitment: 'processed' },
+      ],
     }
-  }, [])
-  const display = (nav ?? 1).toFixed(3)
-  return { display, raw: nav }
+    const r = await fetch(PUBLIC_RPC, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+    if (!r.ok) return null
+    const j = (await r.json()) as {
+      result?: { value: Array<{ data: [string, string] } | null> }
+    }
+    const accounts = j.result?.value
+    if (!accounts || accounts.length < 2 || !accounts[0] || !accounts[1]) {
+      return null
+    }
+    const poolData = Uint8Array.from(atob(accounts[0].data[0]), c => c.charCodeAt(0))
+    // SPL stake-pool v1.0.0 fixed offsets — total_lamports @ 258, supply @ 266.
+    // Use DataView with the underlying ArrayBuffer so byteOffset (from atob's
+    // typed array) is respected.
+    const dv = new DataView(poolData.buffer, poolData.byteOffset, poolData.byteLength)
+    const totalLamports = dv.getBigUint64(258, true)
+    const supply = dv.getBigUint64(266, true)
+    if (supply === 0n) return null
+    return Number(totalLamports) / Number(supply)
+  } catch {
+    return null
+  }
 }
 
-// -----------------------------------------------------------------------------
-// Reusable building blocks
-// -----------------------------------------------------------------------------
+// Reliability guards. Tiny windows of history (a couple of snapshots minutes
+// apart) compute essentially-zero daily rates that don't reflect the
+// protocol's actual trajectory; oversize windows (huge ratio over a few
+// hours, e.g. the first day after deploy) blow up to obviously-fake APRs.
+// Inside [MIN, MAX) the number is plausible; outside, we show "—" rather
+// than mislead.
+const MIN_HISTORY_SPAN_DAYS = 0.5 // require ≥12h of snapshots before trusting daily rate
+const MAX_PLAUSIBLE_DAILY = 0.5 // 50%/day cap — anything beyond is data noise
+const MAX_DISPLAYED_APR_PCT = 100_000 // beyond this we render "—"; not believable
 
-/**
- * Looping word-strip. Renders `items` twice inside a flex track so the
- * 0 → -50% slide animation produces seamless infinite scrolling. The
- * `direction` controls which way the track travels; `speedSeconds` lets
- * callers tune per-strip pace (faster for the small dark strips, slower
- * for the giant lime ones so the text doesn't blur into mush).
- */
-function Marquee({
-  items,
-  direction = 'left',
-  speedSeconds = 22,
-  className = '',
-  itemClassName = '',
-  separator = '•',
-}: {
-  items: string[]
-  direction?: 'left' | 'right'
-  speedSeconds?: number
-  className?: string
-  itemClassName?: string
-  separator?: string
-}) {
-  const doubled = [...items, ...items]
-  const animationName =
-    direction === 'left' ? 'stak-marquee-left' : 'stak-marquee-right'
-  return (
-    <div className={`overflow-hidden whitespace-nowrap ${className}`}>
-      <div
-        className="flex w-max"
-        style={{
-          animation: `${animationName} ${speedSeconds}s linear infinite`,
-        }}
-      >
-        {doubled.map((word, i) => (
-          <span
-            key={`${word}-${i}`}
-            className={`inline-flex items-center ${itemClassName}`}
-          >
-            <span>{word}</span>
-            <span aria-hidden className="px-6 opacity-80">
-              {separator}
-            </span>
-          </span>
-        ))}
-      </div>
-    </div>
-  )
-}
+function useLivePerf(refreshMs = 30_000): PerfState {
+  const [state, setState] = useState<PerfState>(INITIAL)
 
-/**
- * Sticky top nav. Stays attached to the viewport but flips its background
- * once you scroll past the cream hero so the mint pill keeps contrast on
- * the dark sections below. The pill itself always links to /app.
- */
-function TopNav() {
-  const ref = useRef<HTMLElement | null>(null)
   useEffect(() => {
-    const el = ref.current
-    if (!el) return
-    const onScroll = () => {
-      // Use the first hero's height as the threshold. The hero is 100vh
-      // tall; once we've scrolled past ~70% of that the dark backdrop
-      // takes over and the nav needs the inverted treatment.
-      const flipAt = window.innerHeight * 0.7
-      if (window.scrollY > flipAt) {
-        el.dataset.dark = 'true'
-      } else {
-        el.dataset.dark = 'false'
+    // Track the latest fetch generation so an in-flight call from a previous
+    // interval tick can't clobber the state with stale data. Without this
+    // guard, if `fetchAll` ever takes longer than `refreshMs` (CoinGecko
+    // hiccup, slow RPC) two ticks overlap and whichever finishes last wins —
+    // produces visibly-flipping numbers between renders.
+    let generation = 0
+    let cancelledMount = false
+
+    const fetchAll = async () => {
+      const myGen = ++generation
+      const next: PerfState = { ...INITIAL, loading: false }
+      const stale = () => cancelledMount || myGen !== generation
+
+      // 1. Live NAV — direct RPC. Authoritative; doesn't depend on /api/*.
+      const rate = await fetchLiveRate()
+      if (stale()) return
+      if (rate != null) {
+        next.rate = rate
+        next.liveRate = true
       }
+
+      // 2. Historical rate trajectory → realised compound daily yield +
+      //    doubling time. Only available when /api/history is reachable
+      //    (deployed Vercel build, or vite dev with proxy). Guards:
+      //    - need ≥ MIN_HISTORY_SPAN_DAYS of span so tiny windows don't
+      //      compute essentially-zero daily rates
+      //    - reject dailyRate above MAX_PLAUSIBLE_DAILY as data noise
+      try {
+        const r = await fetch('/api/history?limit=500')
+        if (r.ok) {
+          const rows: { ts: number; rate: number }[] = await r.json()
+          if (Array.isArray(rows) && rows.length > 1) {
+            const last = rows[rows.length - 1]
+            if (!next.rate && last.rate > 0) next.rate = last.rate
+            const target = last.ts - 24 * 60 * 60 * 1000
+            let prev = rows[0]
+            for (const row of rows) {
+              if (Math.abs(row.ts - target) < Math.abs(prev.ts - target)) {
+                prev = row
+              }
+            }
+            const dtDays = (last.ts - prev.ts) / (1000 * 60 * 60 * 24)
+            if (
+              prev.rate > 0 &&
+              last.rate > prev.rate &&
+              dtDays >= MIN_HISTORY_SPAN_DAYS
+            ) {
+              const dailyRate = Math.pow(last.rate / prev.rate, 1 / dtDays) - 1
+              if (dailyRate > 0 && dailyRate <= MAX_PLAUSIBLE_DAILY) {
+                next.dailyRate = dailyRate
+                next.doublingDays = Math.log(2) / Math.log(1 + dailyRate)
+                next.liveHistory = true
+              }
+            }
+          }
+        }
+      } catch {
+        /* /api/history unavailable — leave dailyRate / doublingDays null */
+      }
+      if (stale()) return
+
+      // 3. SOL spot — CoinGecko (CORS-open). Used to compute "SOL needed
+      //    to print $100/day". Falls back to a fixed estimate if down.
+      try {
+        const r = await fetch(
+          'https://api.coingecko.com/api/v3/simple/price?ids=solana&vs_currencies=usd',
+        )
+        if (r.ok) {
+          const j: { solana?: { usd?: number } } = await r.json()
+          if (j.solana?.usd) {
+            next.solUsd = j.solana.usd
+            next.livePrice = true
+          }
+        }
+      } catch {
+        /* keep fallback solUsd */
+      }
+      if (stale()) return
+
+      // Only derive solFor100 if dailyRate survived the sanity guards above —
+      // means hero scoreboard and implied APR are guaranteed to come from the
+      // SAME dailyRate value within a single tick (no more "$100/day on 35
+      // SOL" + "1.00% APR" disagreement).
+      if (next.dailyRate != null) {
+        next.solFor100 = 100 / next.solUsd / next.dailyRate
+      }
+
+      setState(next)
     }
-    onScroll()
-    window.addEventListener('scroll', onScroll, { passive: true })
-    return () => window.removeEventListener('scroll', onScroll)
-  }, [])
+    fetchAll()
+    const id = setInterval(fetchAll, refreshMs)
+    return () => {
+      cancelledMount = true
+      clearInterval(id)
+    }
+  }, [refreshMs])
+
+  return state
+}
+
+// -----------------------------------------------------------------------------
+// NAV ticker — tiny +ε pip animation so the rate feels alive. While the live
+// rate is loading we render an em-dash so the pip can't accumulate against
+// the placeholder `1.0` and produce a wrong-looking value like 1.000044.
+// -----------------------------------------------------------------------------
+function NavTicker({ rate }: { rate: number | null }) {
+  const [pip, setPip] = useState(0)
+  useEffect(() => {
+    if (rate == null) return
+    const id = setInterval(
+      () => setPip(p => p + Math.random() * 0.0000018),
+      1100,
+    )
+    return () => clearInterval(id)
+  }, [rate])
+  if (rate == null) {
+    return (
+      <span className="mono tabular" style={{ color: 'var(--ink-muted)' }}>
+        —
+      </span>
+    )
+  }
   return (
-    <nav
-      ref={ref}
-      data-dark="false"
-      className="fixed top-0 inset-x-0 z-50 px-6 py-5 flex items-center justify-between transition-colors duration-300 data-[dark=true]:text-[var(--color-stak-fg)] text-[#1a1a1a]"
-    >
-      <div className="flex items-center gap-8 text-[11px] font-bold tracking-[3px] uppercase">
-        <a
-          href="/"
-          className="no-underline text-current hover:opacity-70 transition-opacity"
-        >
-          home
-        </a>
-        <a
-          href="#tokenomics"
-          className="no-underline text-current hover:opacity-70 transition-opacity"
-        >
-          tokenomics
-        </a>
-      </div>
-      <a
-        href="/app#wrap"
-        className="inline-flex items-center justify-center px-5 py-2 rounded-full bg-[var(--color-stak-mint)] text-[#0a1a14] text-[11px] font-bold tracking-[3px] uppercase no-underline hover:brightness-110 transition"
-      >
-        wrap stacsol
-      </a>
-    </nav>
+    <span className="mono tabular" style={{ color: 'var(--accent-deep)' }}>
+      {(rate + pip).toFixed(6)}
+    </span>
   )
 }
 
 // -----------------------------------------------------------------------------
 // Sections
 // -----------------------------------------------------------------------------
-
-function Hero() {
+function HeroBlock({ perf }: { perf: PerfState }) {
+  // Compound APR — `(1 + dailyRate)^365 − 1`. At low daily rates this is
+  // ≈ dailyRate × 365; at the protocol's actual rate it explodes correctly
+  // instead of misrepresenting as a linear annual. Clamp implausible values
+  // to null so the cell renders "—" rather than e.g. "1.2M%".
+  const aprPct =
+    perf.dailyRate != null
+      ? Math.min(
+          MAX_DISPLAYED_APR_PCT,
+          (Math.pow(1 + perf.dailyRate, 365) - 1) * 100,
+        )
+      : null
+  const aprDisplayable =
+    aprPct != null && aprPct >= 0 && aprPct < MAX_DISPLAYED_APR_PCT
   return (
-    <section className="stak-grain relative min-h-screen flex flex-col items-center justify-center px-6 overflow-hidden">
-      {/* Massive wordmark. Letter-spacing is tuned so it fills the viewport
-          on desktop but reflows safely on mobile via the responsive font
-          sizing below. */}
-      <h1 className="m-0 text-[#0c0c0c] font-display font-medium leading-none text-center select-none tracking-[-0.03em] text-[18vw] sm:text-[15vw]">
-        stacSOL
+    <section className="hero shell">
+      <div className="hero-eyebrow">
+        <span className="dot" />
+        <span className="eyebrow">protocol live · solana mainnet</span>
+        {(perf.liveRate || perf.liveHistory || perf.livePrice) && (
+          <span
+            className={`live-chip ${perf.loading ? 'dim' : ''}`}
+            style={{ marginLeft: 8 }}
+          >
+            <span className="dot" />
+            live data
+          </span>
+        )}
+      </div>
+
+      <div className="scoreboard">
+        <div className="score">
+          <div className="score-k">
+            <span className="live-dot" />
+            doubling time
+          </div>
+          <div className="score-v">
+            <em>
+              {perf.doublingDays != null ? perf.doublingDays.toFixed(1) : '—'}
+            </em>
+            <span className="small">days</span>
+          </div>
+          <div className="score-sub">
+            {perf.doublingDays != null ? (
+              <>
+                stacSOL is doubling holders' money every{' '}
+                <b>
+                  {Math.max(1, Math.floor(perf.doublingDays - 1))}–
+                  {Math.ceil(perf.doublingDays + 1)} days
+                </b>{' '}
+                at the current realized rate. Burn-loop reconciled every 5
+                minutes.
+              </>
+            ) : (
+              'Realised daily yield is derived from the indexed pool history. Live once a few snapshots have rolled in.'
+            )}
+          </div>
+        </div>
+
+        <div className="score">
+          <div className="score-k">
+            <span className="live-dot" />
+            $100/day on
+          </div>
+          <div className="score-v tabular">
+            {perf.solFor100 != null ? perf.solFor100.toFixed(2) : '—'}
+            <span className="small">SOL</span>
+          </div>
+          <div className="score-sub">
+            That's the SOL it currently takes, stacc'd, to print{' '}
+            <b>$100/day</b>. At <b>${perf.solUsd.toFixed(0)}/SOL</b> spot.
+            Recomputed every block.
+          </div>
+        </div>
+      </div>
+
+      <h1 className="hero-h1">
+        Yield as <em>deflation,</em>
+        <br /> not inflation.
       </h1>
-      {/* Bottom-of-hero green wash that bleeds into the dark section
-          underneath — sets up the visual handoff. */}
-      <div className="absolute bottom-0 inset-x-0 h-32 bg-gradient-to-b from-transparent to-[var(--color-stak-lime)]/60 pointer-events-none" />
-      {/* Down-arrow scroll cue, sits just above the green wash. */}
-      <div className="absolute bottom-10 left-1/2 -translate-x-1/2 text-[#1a1a1a] text-2xl animate-bounce">
-        ⌄
-      </div>
-    </section>
-  )
-}
 
-function MarqueeStripDark() {
-  // Tight, small-cap marquee on the dark backdrop — sets the tone before
-  // the WHY STAKE block. Two rows running in opposite directions adds
-  // motion without being garish.
-  const items = ['6.9% burn', 'mint', 'wrap', 'deposit', 'borrow', 'loop']
-  return (
-    <div className="bg-[var(--color-stak-bg)] text-[var(--color-stak-mint)] py-4 border-y border-[var(--color-stak-line)]">
-      <Marquee
-        items={items.map((s) => s.toUpperCase())}
-        direction="left"
-        speedSeconds={24}
-        itemClassName="text-[13px] font-bold tracking-[3px]"
-      />
-    </div>
-  )
-}
+      <p className="hero-lede">
+        stacSOL is a hyper-yielding Solana liquid staking token. Built on
+        Sanctum's audited stake pool, with a 6.9% Token-2022 transfer-fee burn
+        loop layered on top — the redemption rate climbs from staking yield{' '}
+        <em>and</em> from every cross-pair trade. Mathematically monotonic up.
+      </p>
 
-function WhyStake() {
-  const { display: navStr, raw: navRaw } = useLatestNav()
-  return (
-    <section
-      id="why"
-      className="bg-[var(--color-stak-bg)] text-[var(--color-stak-fg)] px-6 sm:px-12 py-24 sm:py-32"
-    >
-      <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-[1fr_minmax(320px,420px)] gap-12 lg:gap-20 items-start">
-        <div>
-          <h2 className="m-0 mb-12 font-display font-light tracking-[-0.02em] leading-none text-5xl sm:text-7xl">
-            why stake?
-          </h2>
-          <div className="space-y-12">
-            {/* Each proof tile uses the same structural pattern: small
-                lime-colored label, then a large condensed statement that
-                reads as a manifesto line. The statements are deliberately
-                terse — they're meant to feel like axioms, not paragraphs. */}
-            <div>
-              <div className="text-[var(--color-stak-lime)] text-[11px] font-mono tracking-[3px] uppercase mb-3">
-                proof a
-              </div>
-              <div className="font-display font-light text-3xl sm:text-5xl leading-tight tracking-[-0.01em]">
-                1 stacSOL &gt; 1 SOL + accumulated yield
-              </div>
-            </div>
-            <div>
-              <div className="text-[var(--color-stak-lime)] text-[11px] font-mono tracking-[3px] uppercase mb-3">
-                proof b
-              </div>
-              <div className="font-display font-light text-3xl sm:text-5xl leading-tight tracking-[-0.01em]">
-                every transfer = + burned forever
-              </div>
-            </div>
-            <div>
-              <div className="text-[var(--color-stak-lime)] text-[11px] font-mono tracking-[3px] uppercase mb-3">
-                proof c
-              </div>
-              <div className="font-display font-light text-3xl sm:text-5xl leading-tight tracking-[-0.01em]">
-                fewer tokens → your share worth more
-              </div>
-            </div>
+      <div className="hero-meta">
+        <div className="meta-cell">
+          <div className="meta-k">redemption rate</div>
+          <div className="meta-v">
+            <NavTicker rate={perf.rate} />
+            <sup>↑</sup>
           </div>
+          <div className="meta-sub">SOL per stacSOL · climbing</div>
         </div>
-
-        {/* Live NAV tile. Mint-colored digits for "1.xxx" (the current
-            stacSOL→SOL rate from /api/history), lime "+" kicker for the
-            "and rising" idea. While the fetch is in flight we render the
-            baseline 1.000 so layout never pops. */}
-        <div className="rounded-2xl border border-[var(--color-stak-line)] bg-[var(--color-stak-bg-soft)] p-8 sm:p-10">
-          <div className="font-display font-light leading-none tracking-[-0.04em] text-6xl sm:text-7xl">
-            <span className="text-[var(--color-stak-mint)]">{navStr}</span>
-            <span className="text-[var(--color-stak-lime)]">+</span>
-          </div>
-          <div className="mt-6 text-[var(--color-stak-dim)] text-[11px] font-mono tracking-[3px] uppercase">
-            stacSOL = SOL + yield
-          </div>
-          <div className="mt-3 flex items-center gap-2 text-[var(--color-stak-mint)] text-[11px] font-mono tracking-[3px] uppercase">
+        <div className="meta-cell">
+          <div className="meta-k">transfer fee</div>
+          <div className="meta-v tabular">
+            6.9
             <span
-              className={
-                'w-1.5 h-1.5 rounded-full bg-[var(--color-stak-mint)] [box-shadow:0_0_8px_var(--color-stak-mint)] ' +
-                (navRaw != null ? 'animate-pulse' : 'opacity-40')
-              }
-            />
-            {navRaw != null ? 'growing every block' : 'loading…'}
-          </div>
-        </div>
-      </div>
-
-      {/* Two-column explainer paragraph. Mono body type because the rest
-          of the section leans display — the visual whiplash makes the
-          prose feel like a footnote / receipt, which is the vibe. */}
-      <div className="max-w-7xl mx-auto mt-20 grid grid-cols-1 md:grid-cols-2 gap-8 text-[var(--color-stak-fg)]/80 font-mono text-[13px] leading-relaxed">
-        <p className="m-0">
-          When you mint stacSOL, every single transfer in the ecosystem
-          takes a 6.9% fee. That fee gets burned — destroyed forever —
-          every 5 minutes. The result? Fewer stacSOL tokens exist over
-          time, meaning your 1 stacSOL is worth more and more SOL.
-        </p>
-        <p className="m-0">
-          It&apos;s like staking, except the yield comes from deflation
-          instead of inflation. While everyone else is diluting their bags
-          with new token emissions, stacSOL holders are watching their
-          share of the pie grow automatically.
-        </p>
-      </div>
-    </section>
-  )
-}
-
-function MarqueeStripGiant() {
-  // The giant lime strip is the visual centerpiece between the two
-  // analytical sections. Two rows in opposite directions; both are
-  // intentionally slower than the small dark strips so the typography
-  // stays legible at this size.
-  const items = ['wrap', 'mint', 'deposit', 'borrow', 'loop']
-  const upper = items.map((s) => s.toUpperCase())
-  return (
-    <div className="bg-[var(--color-stak-bg)] py-8 sm:py-12 overflow-hidden">
-      <Marquee
-        items={upper}
-        direction="left"
-        speedSeconds={48}
-        className="text-[var(--color-stak-lime)]"
-        itemClassName="font-display font-medium tracking-[-0.02em] text-[14vw] sm:text-[12vw] leading-none"
-        separator="•"
-      />
-      <Marquee
-        items={upper.slice().reverse()}
-        direction="right"
-        speedSeconds={56}
-        className="text-[var(--color-stak-lime)] mt-2 sm:mt-4"
-        itemClassName="font-display font-medium tracking-[-0.02em] text-[14vw] sm:text-[12vw] leading-none"
-        separator="•"
-      />
-    </div>
-  )
-}
-
-function BuiltDifferent() {
-  // Comparison rows are an array so the markup stays uniform. THEM/US
-  // contrast: black-and-white on the left, lime/mint on the right. The
-  // section is anchored at #tokenomics so the top-nav link can jump to
-  // it without a router round-trip.
-  const rows: { label: string; them: string; us: string }[] = [
-    {
-      label: 'yield source',
-      them: 'inflation — mint new tokens',
-      us: 'deflation — burn existing tokens',
-    },
-    {
-      label: 'supply over time',
-      them: 'increases ↗',
-      us: 'decreases ↘',
-    },
-    {
-      label: 'your share value',
-      them: 'diluted by inflation',
-      us: 'concentrated by burns',
-    },
-    {
-      label: 'transfer fee',
-      them: '0% — free to move',
-      us: '6.9% — burns forever',
-    },
-    {
-      label: 'claim frequency',
-      them: 'manual — you claim',
-      us: 'auto — every transfer burns',
-    },
-  ]
-  return (
-    <section
-      id="tokenomics"
-      className="bg-[var(--color-stak-bg)] text-[var(--color-stak-fg)] px-6 sm:px-12 py-24 sm:py-32"
-    >
-      <div className="max-w-7xl mx-auto">
-        <h2 className="m-0 font-display font-light leading-none tracking-[-0.02em] text-5xl sm:text-7xl [text-shadow:0_0_24px_rgba(255,255,255,0.18)]">
-          built different
-        </h2>
-        <p className="mt-6 max-w-md text-[var(--color-stak-fg)]/80 font-mono text-[13px] leading-relaxed">
-          While traditional staking inflates supply to pay yield, stacSOL
-          deflates. The same yield mechanics, inverted.
-        </p>
-
-        <div className="mt-16 border-t border-[var(--color-stak-line)]">
-          {/* Header row — only meaningful on wide screens; on mobile the
-              labels fold into each row as inline mini-headers. */}
-          <div className="hidden md:grid grid-cols-[1.2fr_1fr_1fr] py-4 text-[11px] font-mono tracking-[3px] uppercase text-[var(--color-stak-dim)]">
-            <div />
-            <div>them</div>
-            <div className="text-[var(--color-stak-mint)]">us</div>
-          </div>
-          {rows.map((row) => (
-            <div
-              key={row.label}
-              className="grid grid-cols-1 md:grid-cols-[1.2fr_1fr_1fr] gap-2 md:gap-6 py-6 border-t border-[var(--color-stak-line)] font-mono text-[13px]"
+              style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: '0.45em',
+                marginLeft: 2,
+                color: 'var(--ink-muted)',
+              }}
             >
-              <div className="uppercase tracking-[3px] text-[11px] text-[var(--color-stak-dim)]">
-                {row.label}
-              </div>
-              <div className="text-[var(--color-stak-fg)]/85">
-                <span className="md:hidden text-[var(--color-stak-dim)] text-[10px] uppercase tracking-[3px] mr-2">
-                  them ·
-                </span>
-                {row.them}
-              </div>
-              <div className="text-[var(--color-stak-mint)]">
-                <span className="md:hidden text-[var(--color-stak-dim)] text-[10px] uppercase tracking-[3px] mr-2">
-                  us ·
-                </span>
-                {row.us}
-              </div>
-            </div>
-          ))}
+              %
+            </span>
+          </div>
+          <div className="meta-sub">burned every 5 min</div>
         </div>
+        <div className="meta-cell">
+          <div className="meta-k">backing</div>
+          <div className="meta-v tabular">
+            100
+            <span
+              style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: '0.45em',
+                marginLeft: 2,
+                color: 'var(--ink-muted)',
+              }}
+            >
+              %
+            </span>
+          </div>
+          <div className="meta-sub">liquid SOL reserve</div>
+        </div>
+        <div className="meta-cell">
+          <div className="meta-k">implied APR</div>
+          <div className="meta-v tabular">
+            {!aprDisplayable || aprPct == null
+              ? '—'
+              : aprPct >= 1000
+                ? Math.round(aprPct).toLocaleString()
+                : aprPct.toFixed(1)}
+            <span
+              style={{
+                fontFamily: 'var(--f-mono)',
+                fontSize: '0.45em',
+                marginLeft: 2,
+                color: 'var(--ink-muted)',
+              }}
+            >
+              %
+            </span>
+          </div>
+          <div className="meta-sub">from 24h rate change</div>
+        </div>
+      </div>
 
+      <div className="hero-cta-row">
+        <a className="btn btn-primary" href="/app">
+          Mint stacSOL
+          <span className="arrow">→</span>
+        </a>
+        <a className="btn btn-ghost" href="#why">
+          How it works
+        </a>
         <a
+          className="btn btn-ghost"
           href="/faq"
-          className="mt-16 inline-flex items-center gap-3 font-display font-light text-3xl sm:text-4xl tracking-[-0.02em] text-[var(--color-stak-mint)] no-underline hover:opacity-80 transition"
+          style={{ borderColor: 'transparent' }}
         >
-          see the tokenomics
-          <span aria-hidden>→</span>
+          Read the bankrun math
+          <span className="arrow">↗</span>
         </a>
       </div>
     </section>
   )
 }
 
-function Stackening() {
-  // Hero-scale glow text. The blur-shadow is the whole effect — pure CSS,
-  // no images. Below it, a four-cell stat row with the headline figures.
+function Proofs() {
+  const items = [
+    {
+      n: 'PROOF A',
+      t: '1 stacSOL is always worth more than 1 SOL plus accumulated yield.',
+    },
+    {
+      n: 'PROOF B',
+      t: 'Every transfer in the ecosystem burns 6.9% of itself. Forever.',
+    },
+    {
+      n: 'PROOF C',
+      t: 'Fewer tokens exist over time. Your share gets larger, automatically.',
+    },
+  ]
   return (
-    <section className="bg-[var(--color-stak-bg)] text-[var(--color-stak-fg)] px-6 sm:px-12 py-24 sm:py-40 overflow-hidden">
-      <div className="max-w-7xl mx-auto">
-        <h2
-          className="m-0 font-display font-light leading-[0.85] tracking-[-0.04em] text-[16vw] sm:text-[14vw] text-[var(--color-stak-fg)]/90 text-center"
-          style={{ textShadow: '0 0 48px rgba(255,255,255,0.15)' }}
-        >
-          welcome to
-          <br />
-          the staccening
+    <section className="section shell" id="why">
+      <div className="section-head">
+        <h2 className="section-h">
+          Why <em>stake.</em>
         </h2>
+        <p className="section-lede">
+          When you mint stacSOL, every single transfer in the ecosystem
+          withholds 6.9% — and every five minutes those withheld tokens are
+          burned and reconciled into the redemption rate. The result is the
+          same yield mechanics inverted: instead of diluting your bag with new
+          emissions, the protocol concentrates your share of the existing one.
+        </p>
+      </div>
 
-        <div className="mt-16 grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-12">
-          {/* All four numbers are protocol constants, not pool state — no
-              fetch required. The two 6.9% figures are intentional: one is
-              the Token-2022 transfer fee (every send burns), the other is
-              the deposit/burn fee on mint and redeem. They're the same
-              percentage but two different mechanisms; both are real. */}
-          <Stat value="6.9%" label="transfer fee · burns" />
-          <Stat value="5 min" label="burn interval" />
-          <Stat value="∞" label="up only" />
-          <Stat value="6.9%" label="mint / burn fee" />
-        </div>
-
-        {/* The borrow-against-it pitch. Quote-block bar on the left,
-            staccish disclaimer on the bottom-right to keep it grounded. */}
-        <div className="mt-20 max-w-2xl">
-          <div className="border-l-2 border-[var(--color-stak-mint)] pl-5 font-mono text-[13px] leading-relaxed text-[var(--color-stak-fg)]/85">
-            stacSOL is SOL on crack — the price cannot possibly go down
-            vs SOL. Instead of selling your stacSOL and missing the
-            upside, just borrow against it. Your stacSOL keeps printing
-            value while you spend the borrowed cash.
+      <div className="proofs">
+        {items.map(p => (
+          <div className="proof" key={p.n}>
+            <div className="proof-n">{p.n}</div>
+            <div className="proof-text">{p.t}</div>
           </div>
-          <div className="mt-3 pl-5 text-[var(--color-stak-mint)] text-[10px] font-mono tracking-[3px] uppercase">
-            — not stacc&apos;s words
-          </div>
-        </div>
+        ))}
+      </div>
+    </section>
+  )
+}
 
-        {/* Primary CTA — funnels into the dashboard's mint section. */}
-        <div className="mt-16">
-          <a
-            href="/app#mint"
-            className="inline-flex items-center gap-3 font-display font-medium text-5xl sm:text-7xl tracking-[-0.02em] text-[var(--color-stak-fg)] no-underline hover:text-[var(--color-stak-mint)] transition-colors"
+function Compare() {
+  const rows = [
+    {
+      k: 'yield source',
+      them: 'inflation — mint new tokens',
+      us: 'deflation — burn existing tokens',
+    },
+    { k: 'supply over time', them: 'increases', us: 'decreases' },
+    {
+      k: 'your share value',
+      them: 'diluted by emissions',
+      us: 'concentrated by burns',
+    },
+    {
+      k: 'transfer fee',
+      them: '0% — free to move',
+      us: '6.9% — burned forever',
+    },
+    {
+      k: 'claim frequency',
+      them: 'manual — you claim',
+      us: 'auto — every transfer burns',
+    },
+    {
+      k: 'rate trajectory',
+      them: 'depends on validator',
+      us: 'monotonically up — by program',
+    },
+  ]
+  return (
+    <section className="section shell" id="tokenomics">
+      <div className="section-head">
+        <h2 className="section-h">
+          Built <em>different.</em>
+        </h2>
+        <p className="section-lede">
+          Traditional staking inflates supply to pay yield. stacSOL deflates
+          supply to deliver the same outcome — but with a redemption ratio the
+          SPL stake-pool program is mathematically incapable of regressing.
+        </p>
+      </div>
+
+      <div className="cmp">
+        <div className="cmp-row head">
+          <div>·</div>
+          <div>them</div>
+          <div>us</div>
+        </div>
+        {rows.map(r => (
+          <div className="cmp-row" key={r.k}>
+            <div className="label">{r.k}</div>
+            <div className="them">{r.them}</div>
+            <div className="us">{r.us}</div>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function Architecture() {
+  return (
+    <section className="section shell">
+      <div className="section-head">
+        <h2 className="section-h">
+          The <em>mechanism.</em>
+        </h2>
+        <p className="section-lede">
+          Two yield sources, both compounding into one ratio. No custom
+          on-chain code — stacSOL uses Sanctum's deployed SPL stake-pool
+          program unmodified. Token-2022 handles the transfer-fee accounting
+          natively.
+        </p>
+      </div>
+
+      <div
+        style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(2, 1fr)',
+          gap: 0,
+          borderTop: '1px solid var(--line)',
+          borderBottom: '1px solid var(--line)',
+        }}
+      >
+        <div
+          style={{
+            padding: '40px 32px 40px 0',
+            borderRight: '1px solid var(--line)',
+          }}
+        >
+          <div className="eyebrow" style={{ marginBottom: 18 }}>
+            source one
+          </div>
+          <h3
+            className="serif"
+            style={{
+              fontSize: 28,
+              lineHeight: 1.1,
+              margin: 0,
+              marginBottom: 16,
+              letterSpacing: '-0.015em',
+            }}
           >
-            start staccing
-            <span aria-hidden>→</span>
-          </a>
-          <div className="mt-3 text-[var(--color-stak-dim)] text-[11px] font-mono tracking-[3px] uppercase">
-            mint at stacsol.app
+            Staking yield.
+          </h3>
+          <p
+            style={{
+              color: 'var(--ink-soft)',
+              fontSize: 15,
+              lineHeight: 1.6,
+              maxWidth: '42ch',
+              margin: 0,
+            }}
+          >
+            Backing SOL sits in the pool reserve. The redemption ratio is{' '}
+            <span className="mono" style={{ color: 'var(--ink)' }}>
+              total_lamports / pool_token_supply
+            </span>
+            . The program has no code path that can decrease it.
+          </p>
+        </div>
+        <div style={{ padding: '40px 0 40px 32px' }}>
+          <div className="eyebrow" style={{ marginBottom: 18 }}>
+            source two
           </div>
+          <h3
+            className="serif"
+            style={{
+              fontSize: 28,
+              lineHeight: 1.1,
+              margin: 0,
+              marginBottom: 16,
+              letterSpacing: '-0.015em',
+            }}
+          >
+            Burn loop.
+          </h3>
+          <p
+            style={{
+              color: 'var(--ink-soft)',
+              fontSize: 15,
+              lineHeight: 1.6,
+              maxWidth: '42ch',
+              margin: 0,
+            }}
+          >
+            Every five minutes the manager harvests withheld transfer fees,
+            burns them, and reconciles{' '}
+            <span className="mono" style={{ color: 'var(--ink)' }}>
+              pool_token_supply
+            </span>{' '}
+            with the new mint supply. Both denominators shrink. Numerator
+            unchanged. Ratio rises.
+          </p>
+        </div>
+      </div>
+
+      <div
+        style={{
+          marginTop: 56,
+          padding: '48px 0',
+          textAlign: 'center',
+          borderTop: '1px solid var(--line-soft)',
+          borderBottom: '1px solid var(--line-soft)',
+        }}
+      >
+        <div className="eyebrow" style={{ marginBottom: 28 }}>
+          net asset value
+        </div>
+        <div
+          className="serif tabular"
+          style={{
+            fontSize: 'clamp(36px, 5vw, 64px)',
+            lineHeight: 1,
+            letterSpacing: '-0.025em',
+            color: 'var(--ink)',
+          }}
+        >
+          NAV <span style={{ color: 'var(--ink-muted)' }}>=</span>{' '}
+          <span
+            style={{
+              textDecoration: 'overline',
+              textUnderlineOffset: 4,
+              paddingBottom: 4,
+            }}
+          >
+            total lamports
+          </span>
+          <span
+            style={{
+              display: 'inline-block',
+              width: 1,
+              height: '0.8em',
+              background: 'var(--ink)',
+              margin: '0 0.4em',
+              verticalAlign: 'middle',
+            }}
+          />
+          <span style={{ textDecoration: 'underline' }}>pool token supply</span>
+        </div>
+        <div
+          className="mono"
+          style={{
+            marginTop: 24,
+            color: 'var(--ink-muted)',
+            fontSize: 12,
+            letterSpacing: '0.1em',
+          }}
+        >
+          monotonically non-decreasing · by program
         </div>
       </div>
     </section>
   )
 }
 
-function Stat({ value, label }: { value: string; label: string }) {
+function FaqStrip() {
+  const items = [
+    {
+      q: 'Is it safe?',
+      a: "The on-chain pool is Sanctum's audited SPL stake-pool program, deployed by Sanctum, used unmodified. No custom Rust in this repo.",
+    },
+    {
+      q: 'Can the rate go down?',
+      a: 'No. The SPL stake-pool program has no code path that decreases the redemption ratio. Burns shrink the denominator only.',
+    },
+    {
+      q: 'How is the burn loop authorized?',
+      a: 'Manager keypair can harvest, burn, and trigger UpdateStakePoolBalance. It cannot drain reserves, mint new stacSOL, or change the transfer fee config.',
+    },
+    {
+      q: "What's the catch?",
+      a: "Transferring stacSOL costs you 6.9% — by design. If you trade frequently you'll pay it; if you hold, the burn flywheel works for you.",
+    },
+  ]
   return (
-    <div>
-      <div className="font-display font-light text-5xl sm:text-7xl leading-none tracking-[-0.02em] text-[var(--color-stak-mint)]">
-        {value}
+    <section className="section shell" id="faq">
+      <div className="section-head">
+        <h2 className="section-h">
+          Reasonable <em>questions.</em>
+        </h2>
+        <p className="section-lede">
+          The full bankrun math, safety properties, fee mechanics, and operator
+          authorities are documented and rendered against live pool state at{' '}
+          <a
+            href="/faq"
+            style={{
+              color: 'var(--accent-deep)',
+              textDecoration: 'underline',
+              textDecorationThickness: 1,
+              textUnderlineOffset: 3,
+            }}
+          >
+            /faq
+          </a>
+          .
+        </p>
       </div>
-      <div className="mt-3 text-[var(--color-stak-dim)] text-[11px] font-mono tracking-[3px] uppercase">
-        {label}
+      <div style={{ borderTop: '1px solid var(--line)' }}>
+        {items.map((it, i) => (
+          <details
+            key={i}
+            style={{
+              borderBottom: '1px solid var(--line-soft)',
+              padding: '22px 0',
+            }}
+          >
+            <summary
+              style={{
+                cursor: 'pointer',
+                listStyle: 'none',
+                display: 'flex',
+                alignItems: 'baseline',
+                justifyContent: 'space-between',
+                gap: 24,
+                fontSize: 18,
+                fontFamily: 'var(--f-display)',
+                letterSpacing: '-0.01em',
+                color: 'var(--ink)',
+              }}
+            >
+              <span>{it.q}</span>
+              <span
+                className="mono"
+                style={{
+                  color: 'var(--ink-muted)',
+                  fontSize: 13,
+                  fontFeatureSettings: '"tnum" 1',
+                }}
+              >
+                {String(i + 1).padStart(2, '0')} →
+              </span>
+            </summary>
+            <p
+              style={{
+                margin: '14px 0 0',
+                color: 'var(--ink-soft)',
+                fontSize: 15,
+                lineHeight: 1.6,
+                maxWidth: '62ch',
+                textWrap: 'pretty',
+              }}
+            >
+              {it.a}
+            </p>
+          </details>
+        ))}
       </div>
-    </div>
+    </section>
+  )
+}
+
+function Closing() {
+  return (
+    <section className="closing shell">
+      <h2>
+        Welcome to <br /> the <em>staccening.</em>
+      </h2>
+      <p className="sub">
+        stacSOL is SOL on crack — the redemption rate cannot regress. Instead
+        of selling and missing the upside, just borrow against it.
+      </p>
+      <div className="cta-row">
+        <a className="btn btn-primary" href="/app">
+          Start staccing
+          <span className="arrow">→</span>
+        </a>
+        <button
+          className="btn btn-ghost"
+          onClick={() => window.scrollTo({ top: 0, behavior: 'smooth' })}
+        >
+          Back to top
+        </button>
+      </div>
+    </section>
   )
 }
 
 function Footer() {
   return (
-    <footer className="bg-[var(--color-stak-bg)] text-[var(--color-stak-dim)] px-6 sm:px-12 py-10 border-t border-[var(--color-stak-line)]">
-      <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4 text-[11px] font-mono tracking-[3px] uppercase">
-        <div className="flex gap-6">
-          <a href="/" className="text-current no-underline hover:opacity-80">
-            home
+    <footer className="foot">
+      <div className="shell foot-inner">
+        <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
+          <a href="/faq">FAQ</a>
+          <a href="/leaderboard">Leaderboard</a>
+          <a href="/portfolio">Portfolio</a>
+          <a href="/terms">Terms</a>
+          <a
+            href="https://x.com/thystaccfloweth"
+            target="_blank"
+            rel="noreferrer"
+          >
+            X / @thystaccfloweth
           </a>
           <a
-            href="#tokenomics"
-            className="text-current no-underline hover:opacity-80"
+            href="https://github.com/staccDOTsol/stacSOL"
+            target="_blank"
+            rel="noreferrer"
           >
-            tokenomics
-          </a>
-          <a
-            href="/app"
-            className="text-current no-underline hover:opacity-80"
-          >
-            app
+            GitHub
           </a>
         </div>
-        <div className="text-[var(--color-stak-dim)]">
-          © 2026 stacSOL · all rights reserved
+        <div className="addr">
+          mint · 6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f
         </div>
       </div>
     </footer>
   )
 }
 
-// -----------------------------------------------------------------------------
-// Page
-// -----------------------------------------------------------------------------
+// Nav rendered via shared EditorialNav (see components/EditorialNav.tsx).
 
 export default function Landing() {
+  const perf = useLivePerf()
+
+  // Tag the body so the editorial palette/typography in stacsol.css applies
+  // to this surface only.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
+
   return (
-    <div className="bg-[var(--color-stak-bg)] text-[var(--color-stak-fg)] font-mono min-h-screen">
-      <TopNav />
-      <Hero />
-      <MarqueeStripDark />
-      <WhyStake />
-      <MarqueeStripGiant />
-      <BuiltDifferent />
-      <Stackening />
-      <Footer />
-    </div>
+    <>
+      <EditorialNav pathname="/" />
+      <main>
+        <HeroBlock perf={perf} />
+        <Proofs />
+        <Compare />
+        <Architecture />
+        <FaqStrip />
+        <Closing />
+        <Footer />
+      </main>
+    </>
   )
 }

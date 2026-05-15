@@ -50,6 +50,7 @@ import {
   ixCurveSell,
   previewBuy,
   previewSell,
+  deriveBondingCurve,
   type BondingCurveState,
   type GlobalState,
 } from './curve-launchpad'
@@ -218,15 +219,25 @@ export function buildBuy(args: BuildBuyArgs): BuiltBuy {
   const maxQuoteCost = paddedLst < preview.totalQuote ? padUp(preview.totalQuote, slippageBps) : paddedLst
 
   const ixs: TransactionInstruction[] = []
-  // The Sanctum DepositSol ix only takes a stacSOL ATA for the depositor.
-  // The curve's buy ix REQUIRES `user_token_account` (MEME ATA) and
-  // `user_quote_account` (stacSOL ATA) to already exist — neither uses
-  // init_if_needed in buy.rs. Pre-create both idempotently.
+  // Buy ix now requires ALL quote-side ATAs to already exist (we dropped
+  // init_if_needed from buy.rs to fit BPF's 4KB per-frame stack budget on
+  // anchor 0.30.1 + cargo-build-sbf 1.52). Pre-create idempotently:
+  //   • user MEME ATA           (recipient of the buy)
+  //   • user stacSOL ATA        (depositor + spender)
+  //   • bonding_curve stacSOL ATA (LST flows in)
+  //   • fee_recipient stacSOL ATA (treasury cut)
+  const bondingCurvePda = deriveBondingCurve(args.mint)
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, QUOTE_MINT, TOKEN_2022),
   )
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, args.mint, TOKEN_PROGRAM_ID),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, bondingCurvePda, QUOTE_MINT, TOKEN_2022),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, args.feeRecipient, QUOTE_MINT, TOKEN_2022),
   )
   // Ensure the stacc-launchpad referral ATA exists before the Sanctum
   // DepositSol's Token-2022 MintTo CPI. If the ATA doesn't exist on
@@ -304,17 +315,20 @@ export function buildSell(args: BuildSellArgs): BuiltSell {
   const solExpected = previewLstToSol(lstToBurn, args.pool)
 
   const ixs: TransactionInstruction[] = []
-  // Same ATA-existence guard as the buy path. Sell needs both the
-  // stacSOL ATA (where the curve deposits LST proceeds) and the MEME
-  // ATA (where the curve's quote-side transfer pulls MEME from — which
-  // the user owns and presumably already has from a prior buy, but
-  // create-idempotent is cheap and the sell-with-zero-balance case
-  // surfaces a clearer error from the program rather than ATA missing).
+  // Sell ix now also requires fee_recipient + user quote ATAs pre-created
+  // (we dropped init_if_needed for stack-frame reasons).
+  const bondingCurvePda = deriveBondingCurve(args.mint)
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, QUOTE_MINT, TOKEN_2022),
   )
   ixs.push(
     ixCreateAtaIdempotent(args.user, args.user, args.mint, TOKEN_PROGRAM_ID),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, bondingCurvePda, QUOTE_MINT, TOKEN_2022),
+  )
+  ixs.push(
+    ixCreateAtaIdempotent(args.user, args.feeRecipient, QUOTE_MINT, TOKEN_2022),
   )
   ixs.push(
     ixCurveSell({

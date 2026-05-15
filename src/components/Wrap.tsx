@@ -49,6 +49,12 @@ export function Wrap({
   const { publicKey, signTransaction } = useWallet()
   const [mode, setMode] = useState<Mode>('wrap')
   const [amt, setAmt] = useState('')
+  // Set by the 100% / max button so submit can use the exact bigint
+  // (balance − 1 atom) instead of re-parsing the displayed string and
+  // risking a round-up that pushes the wrap/unwrap input over the
+  // actual on-chain balance. Cleared on any manual edit, mode toggle,
+  // or successful submit.
+  const [exactAtoms, setExactAtoms] = useState<bigint | null>(null)
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<ActionStatus | null>(null)
   const [stacBalance, setStacBalance] = useState<bigint | null>(null)
@@ -99,6 +105,17 @@ export function Wrap({
 
   const setPercent = (pct: number) => {
     if (sourceUi == null || sourceUi <= 0) return
+    // 100%/max: lock the exact (balance − 1 atom) bigint so the submit
+    // path can use it directly. toFixed(6) on the displayed string can
+    // round UP for certain balances (e.g. 0.7477006 → "0.747701"),
+    // pushing the on-chain transfer over actual balance and failing.
+    if (pct === 100 && sourceBalance != null && sourceBalance > 0n) {
+      const atoms = sourceBalance - 1n
+      setExactAtoms(atoms)
+      setAmt((Number(atoms) / 10 ** DECIMALS).toFixed(9))
+      return
+    }
+    setExactAtoms(null)
     const raw = (sourceUi * pct) / 100
     setAmt(raw > 0 ? raw.toFixed(6) : '')
   }
@@ -112,7 +129,14 @@ export function Wrap({
     if (!Number.isFinite(amtNum) || amtNum <= 0) return
     setBusy(true)
     try {
-      const raw = BigInt(Math.floor(amtNum * 10 ** DECIMALS))
+      // Prefer the captured 100%/max bigint when present; falls back to
+      // re-parsing the displayed string on any other amount. Submit-time
+      // float math can round up by 1 atom on certain balances which is
+      // exactly the failure mode this whole branch exists to prevent.
+      const raw =
+        exactAtoms != null
+          ? exactAtoms
+          : BigInt(Math.floor(amtNum * 10 ** DECIMALS))
 
       const ixs: TransactionInstruction[] = [
         ComputeBudgetProgram.setComputeUnitLimit({ units: 400_000 }),
@@ -206,6 +230,7 @@ export function Wrap({
         if (mode === 'wrap') fireMint()
         else fireBurn()
         setAmt('')
+        setExactAtoms(null)
         onDone()
       }
     } catch (e) {
@@ -232,7 +257,7 @@ export function Wrap({
         <div className="mb-3 grid grid-cols-2 gap-2">
           <button
             type="button"
-            onClick={() => { setMode('wrap'); setAmt(''); setStatus(null) }}
+            onClick={() => { setMode('wrap'); setExactAtoms(null); setAmt(''); setStatus(null) }}
             className={`px-3 py-2 rounded text-[11px] font-black uppercase tracking-[2px] transition ${
               mode === 'wrap'
                 ? 'bg-[var(--color-hot)] text-black'
@@ -243,7 +268,7 @@ export function Wrap({
           </button>
           <button
             type="button"
-            onClick={() => { setMode('unwrap'); setAmt(''); setStatus(null) }}
+            onClick={() => { setMode('unwrap'); setExactAtoms(null); setAmt(''); setStatus(null) }}
             className={`px-3 py-2 rounded text-[11px] font-black uppercase tracking-[2px] transition ${
               mode === 'unwrap'
                 ? 'bg-[var(--color-warn)] text-black'
@@ -260,7 +285,12 @@ export function Wrap({
             min="0"
             step="0.001"
             value={amt}
-            onChange={(e) => setAmt(e.target.value)}
+            onChange={(e) => {
+              // Manual edit invalidates the captured max bigint —
+              // re-parse from the input on submit.
+              setExactAtoms(null)
+              setAmt(e.target.value)
+            }}
             placeholder={`${sourceLabel} amount`}
             className="w-full px-3 py-2 bg-[var(--color-bg)] text-[var(--color-fg)] border border-[rgb(255_51_0_/_0.4)] rounded font-[inherit] focus:outline-none focus:border-[var(--color-hot)]"
           />

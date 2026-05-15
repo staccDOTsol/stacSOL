@@ -15,6 +15,8 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { fmtAmount, shortPk } from './lib/format'
 import { WalletIdentity, DoxxToggle } from './components/walletDoxx'
+import EditorialNav from './components/EditorialNav'
+import WalletPill from './components/WalletPill'
 
 const REFRESH_MS = 60_000
 const SEARCH_DEBOUNCE_MS = 250
@@ -253,6 +255,14 @@ export default function HoldersLeaderboard() {
   const { publicKey } = useWallet()
   const myPk = publicKey?.toBase58() ?? null
 
+  // Opt this surface into the editorial design (ivory/jade body, sticky nav).
+  // The page's Tailwind utilities reference --color-bg / --color-hot etc.,
+  // which get remapped onto editorial tokens by index.css.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
+
   const [rows, setRows] = useState<HolderRow[]>([])
   const [meta, setMeta] = useState<HoldersLeaderboardResponse | null>(null)
   const [loading, setLoading] = useState(true)
@@ -435,17 +445,11 @@ export default function HoldersLeaderboard() {
   }, [meta])
 
   return (
-    <div className="max-w-[1080px] mx-auto px-4 py-6">
-      <div className="mb-4 flex items-center gap-3">
-        <a
-          href="/"
-          className="text-[10px] uppercase tracking-[3px] text-[var(--color-dim)] hover:text-[var(--color-hot)] no-underline"
-        >
-          ← stacSOL
-        </a>
-      </div>
+    <>
+      <EditorialNav pathname="/leaderboard" ctaSlot={<WalletPill />} />
+      <div className="max-w-[1080px] mx-auto px-4 py-6">
 
-      <h1 className="m-0 mb-2 text-5xl font-black tracking-[-0.05em] text-[var(--color-hot)] [text-shadow:0_0_18px_rgba(255,34,0,0.7),0_0_48px_rgba(255,34,0,0.35),0_0_2px_rgba(255,34,0,1)] [animation:flicker_5s_ease-in-out_infinite]">
+      <h1 className="m-0 mb-2 text-5xl font-black tracking-[-0.05em] text-[var(--color-hot)]">
         holders leaderboard
       </h1>
       <div className="mb-6 flex items-center gap-3">
@@ -908,6 +912,7 @@ export default function HoldersLeaderboard() {
         organic depositors only.
       </p>
     </div>
+    </>
   )
 }
 

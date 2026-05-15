@@ -447,7 +447,51 @@ async function fetchPoolRefs() {
     managerFeeAccount: new PublicKey(d.subarray(194, 226)),
     poolTotalLamports: d.readBigUInt64LE(258),
     poolTokenSupply: d.readBigUInt64LE(266),
+    lastUpdateEpoch: d.readBigUInt64LE(274),
   }
+}
+
+/**
+ * Fire the SPL stake-pool update flow:
+ *   UpdateValidatorListBalance → UpdateStakePoolBalance → Cleanup
+ *
+ * `UpdateStakePoolBalance` is what resets `last_update_epoch`. Without it,
+ * `DepositSol` / `WithdrawSol` fail with custom error 0x11
+ * (StakeListAndPoolOutOfDate) for the entire epoch. The chain-level
+ * requirement is exactly once per epoch, so we no-op early if the pool
+ * is already up to date — avoids 288 wasted update txs/day at 5-min
+ * tick. Bypass with `force=true` after a burn (rate change only
+ * materialises in the redemption math after a fresh UpdateStakePoolBalance,
+ * even within the same epoch). Returns the post-update rate (or null if
+ * the crank was skipped).
+ */
+async function crankPool(force: boolean): Promise<number | null> {
+  const refs = await fetchPoolRefs()
+  const { epoch: currentEpoch } = await withRetry('getEpochInfo', () =>
+    conn.getEpochInfo('confirmed'),
+  )
+  const lastUpdate = Number(refs.lastUpdateEpoch)
+  if (!force && lastUpdate >= currentEpoch) {
+    log(`pool already updated this epoch (${lastUpdate} ≥ ${currentEpoch}) — skip crank`)
+    return null
+  }
+  log(
+    `cranking pool: lastUpdateEpoch=${lastUpdate} currentEpoch=${currentEpoch}${force ? ' (forced after burn)' : ''}`,
+  )
+  await sendIxs(
+    [
+      ixUpdateValidatorListBalance(refs.validatorList, refs.reserveStake),
+      ixUpdateStakePoolBalance(refs.validatorList, refs.reserveStake, refs.managerFeeAccount),
+      ixCleanupRemovedValidatorEntries(refs.validatorList),
+    ],
+    'update-pool-balance',
+  )
+  const refsAfter = await fetchPoolRefs()
+  const rate = Number(refsAfter.poolTotalLamports) / Number(refsAfter.poolTokenSupply)
+  log(
+    `pool rate now: ${rate.toFixed(6)} SOL/stacSOL (epoch ${refsAfter.lastUpdateEpoch})`,
+  )
+  return rate
 }
 
 // ----------------------------------------------------------- tx send
@@ -655,26 +699,22 @@ async function tick() {
   }
   const burned = burnedAny
 
-  // 4. Sync the pool's accounting so the rate gain materializes for redeemers.
-  //    Skip if we didn't burn anything this tick (no drift to clear).
-  if (burned) {
-    try {
-      const refs = await fetchPoolRefs()
-      await sendIxs(
-        [
-          ixUpdateValidatorListBalance(refs.validatorList, refs.reserveStake),
-          ixUpdateStakePoolBalance(refs.validatorList, refs.reserveStake, refs.managerFeeAccount),
-          ixCleanupRemovedValidatorEntries(refs.validatorList),
-        ],
-        'update-pool-balance',
-      )
-      const refsAfter = await fetchPoolRefs()
-      const rate = Number(refsAfter.poolTotalLamports) / Number(refsAfter.poolTokenSupply)
-      navAfter = rate
-      log(`pool rate now: ${rate.toFixed(6)} SOL/stacSOL`)
-    } catch (e) {
-      log(`update-pool error: ${(e as Error).message}`)
-    }
+  // 4. Sync the pool's accounting. Two reasons to crank:
+  //    a. We just burned (or did a recovery withdraw) → force a fresh
+  //       UpdateStakePoolBalance so the rate gain materialises in
+  //       redemption math immediately. Without it the program still pays
+  //       out at the pre-burn ratio until the next natural epoch sync.
+  //    b. Idle tick → ensure the pool's `last_update_epoch` matches the
+  //       current cluster epoch. SPL stake-pool rejects DepositSol /
+  //       WithdrawSol with 0x11 (StakeListAndPoolOutOfDate) for the
+  //       entire epoch otherwise, even with zero fee activity to harvest.
+  //       crankPool() no-ops when already current so we don't pay 288
+  //       wasted update txs/day at 5-min tick.
+  try {
+    const rate = await crankPool(/* force= */ burned)
+    if (rate != null) navAfter = rate
+  } catch (e) {
+    log(`update-pool error: ${(e as Error).message}`)
   }
 
   // Post tick summary so the dashboard can chart burn velocity + attribute

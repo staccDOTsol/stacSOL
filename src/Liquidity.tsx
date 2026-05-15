@@ -1207,7 +1207,18 @@ function RemovePanel({
       stepLabels.push({ label: 'compute outputs', state: 'running' })
       setSteps([...stepLabels])
 
-      const lpToBurn = (lpBalance * BigInt(percent)) / 100n
+      // At 100% we burn (lpBalance − 1 atom) so a stale balance read
+      // (another in-flight tx, a pending fee deduction, an atomic dust
+      // delta from the pool itself) can't push the burn over actual
+      // on-chain LP balance — `Burn` fails on InsufficientFunds and the
+      // whole withdraw bundle aborts. The 1-atom haircut is invisible to
+      // the user (≈1e−9 of an LP token) but eliminates the off-by-one.
+      const lpToBurn =
+        percent === 100
+          ? lpBalance > 0n
+            ? lpBalance - 1n
+            : 0n
+          : (lpBalance * BigInt(percent)) / 100n
       // Expected output, atomic. Use API-reported pool amounts; slippage covers
       // any drift between now and execution.
       const totalLpUi = pool.lpAmount

@@ -21,7 +21,12 @@ import {
 } from '@solana/web3.js'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 
-import { ixCurveCreate } from './lib/curve-launchpad'
+import {
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+  TOKEN_PROGRAM_ID,
+} from '@solana/spl-token'
+import { ixCurveCreate, deriveBondingCurve } from './lib/curve-launchpad'
 import EditorialNav from './components/EditorialNav'
 import WalletPill from './components/WalletPill'
 
@@ -65,6 +70,21 @@ async function buildAndSendCreateTx(args: {
     uri,
   })
 
+  // The on-chain Create ix expects bonding_curve_token_account to already
+  // exist — Anchor's auto-derive init blew the BPF 4KB stack budget so we
+  // moved ATA creation to the client. CreateIdempotent: no-op if already
+  // present (e.g. the mint keypair was re-used). Authority is the bonding
+  // curve PDA, which doesn't yet exist on-chain but its ATA is computable
+  // from the derived address — the spl-token program is fine with that.
+  const bondingCurve = deriveBondingCurve(mint.publicKey)
+  const bondingCurveAtaIx = createAssociatedTokenAccountIdempotentInstruction(
+    creator, // payer
+    getAssociatedTokenAddressSync(mint.publicKey, bondingCurve, true, TOKEN_PROGRAM_ID),
+    bondingCurve, // owner
+    mint.publicKey,
+    TOKEN_PROGRAM_ID,
+  )
+
   // Modest priority fee — create is rent-heavy (mint, bonding curve PDA, ATA,
   // Metaplex metadata account) and we want it landed without retry pain.
   const priorityIx = ComputeBudgetProgram.setComputeUnitPrice({
@@ -76,7 +96,7 @@ async function buildAndSendCreateTx(args: {
   const msg = new TransactionMessage({
     payerKey: creator,
     recentBlockhash: blockhash,
-    instructions: [priorityIx, cuIx, createIx],
+    instructions: [priorityIx, cuIx, bondingCurveAtaIx, createIx],
   }).compileToV0Message()
 
   const tx = new VersionedTransaction(msg)
