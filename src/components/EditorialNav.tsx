@@ -36,7 +36,7 @@ const FLIP_URL =
 const NAV_LINKS = [
   { id: '/', label: 'Home' },
   { id: '/app', label: 'App' },
-  { id: '/launches', label: 'launch00r' },
+  { id: '/launches', label: 'sinbad' },
   { id: FLIP_URL, label: 'eureka', external: true },
   { id: '/portfolio', label: 'Portfolio' },
   { id: '/leaderboard', label: 'Leaderboard' },
