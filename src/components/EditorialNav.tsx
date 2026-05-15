@@ -27,11 +27,11 @@ interface Props {
   ctaSlot?: React.ReactNode
 }
 
-// Optional external host for the stacc-flip casino lobby. Local dev runs it
-// on :5176; prod points at its own subdomain. Set VITE_FLIP_URL per env.
+// External host for the stacc-flip casino lobby. Defaults to prod
+// (stacflip.app); override with VITE_FLIP_URL for local dev / staging.
 const FLIP_URL =
   (import.meta as unknown as { env?: { VITE_FLIP_URL?: string } }).env
-    ?.VITE_FLIP_URL ?? 'http://127.0.0.1:5176'
+    ?.VITE_FLIP_URL ?? 'https://stacflip.app'
 
 const NAV_LINKS = [
   { id: '/', label: 'Home' },
