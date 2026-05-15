@@ -26,6 +26,7 @@
     "@solana/wallet-adapter-wallets": "^0.19.38",
     "@solana/web3.js": "^1.95.0",
     "@solendprotocol/solend-sdk": "^0.14.27",
+    "@vercel/blob": "^2.3.3",
     "@vercel/og": "^0.11.1",
     "bn.js": "^5.2.3",
     "bs58": "^6.0.0",

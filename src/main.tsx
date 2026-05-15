@@ -30,7 +30,10 @@ const Faq = lazy(() => import('./Faq.tsx'))
 const Leaderboard = lazy(() => import('./Leaderboard.tsx'))
 const Baitscope = lazy(() => import('./Baitscope.tsx'))
 const Liqmonsta = lazy(() => import('./Liqmonsta.tsx'))
+const Terms = lazy(() => import('./Terms.tsx'))
+const WrapPage = lazy(() => import('./Wrap.tsx'))
 const Trade = lazy(() => import('./Trade.tsx'))
+const CreateCurve = lazy(() => import('./CreateCurve.tsx'))
 
 // Derive the WebSocket endpoint from the HTTP RPC URL. @solana/web3.js does
 // this auto-derivation internally too, but doing it here means we can pin
@@ -77,8 +80,12 @@ const isFaq = path === '/faq' || path.startsWith('/faq/')
 const isLeaderboard = path === '/leaderboard' || path.startsWith('/leaderboard/')
 const isBaitscope = path === '/baitscope' || path.startsWith('/baitscope/')
 const isLiqmonsta = path === '/liqmonsta' || path.startsWith('/liqmonsta/')
+const isTerms = path === '/terms' || path.startsWith('/terms/')
+const isWrap = path === '/wrap' || path.startsWith('/wrap/')
 // /trade — curve-launchpad buy/sell UI. SOL in, SOL out, LST in the middle.
 const isTrade = path === '/trade' || path.startsWith('/trade/')
+// /create — launch a new bonding curve. Form + image upload via Vercel Blob.
+const isCreate = path === '/create' || path.startsWith('/create/')
 // The dashboard (mint/burn/wrap/position) used to live at `/`. It now
 // lives at `/app` so `/` can serve the marketing landing without dragging
 // the wallet-adapter / Solana web3 chunk on first paint.
@@ -92,11 +99,46 @@ function RouteFallback() {
   )
 }
 
+// Landing, App, and Terms all use the editorial design (data-design="editorial"
+// set on mount). The standalone ThemeToggle from the legacy fire-red palette
+// would collide with the design's sticky-nav theme button, so suppress it on
+// editorial routes. Other routes (Guide, Liquidity, SingleSided, etc.) still
+// render the legacy ThemeToggle in the top-right corner.
+const isLanding =
+  !isGuide &&
+  !isFaq &&
+  !isLiquidity &&
+  !isSingleSided &&
+  !isPortfolio &&
+  !isLeaderboard &&
+  !isBaitscope &&
+  !isLiqmonsta &&
+  !isTerms &&
+  !isWrap &&
+  !isTrade &&
+  !isCreate &&
+  !isApp
+// Editorial routes render the shared EditorialNav (with its own
+// theme-toggle button), so we suppress the legacy top-right ThemeToggle on
+// these paths to avoid two togglers on the same page. Guide / Liquidity /
+// SingleSided / Liqmonsta / Baitscope still use the corner toggle.
+const isEditorial =
+  isLanding ||
+  isApp ||
+  isTerms ||
+  isWrap ||
+  isTrade ||
+  isCreate ||
+  isPortfolio ||
+  isLeaderboard ||
+  isFaq
+
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     {/* Theme toggle sits outside Suspense so it's visible the moment
-        the bundle loads, even while a route is still resolving. */}
-    <ThemeToggle />
+        the bundle loads, even while a route is still resolving.
+        Hidden on `/` so it can't collide with the Landing nav pill. */}
+    {!isEditorial && <ThemeToggle />}
     <Suspense fallback={<RouteFallback />}>
       {isGuide ? (
         <Guide />
@@ -129,12 +171,28 @@ createRoot(document.getElementById('root')!).render(
         <Providers>
           <Liqmonsta />
         </Providers>
+      ) : isTerms ? (
+        // /terms — pure static long-form ToS. No wallet adapter needed.
+        <Terms />
+      ) : isWrap ? (
+        // /wrap — dedicated lander for stacSOL ↔ wstacSOL plus one-click
+        // SOL → wstacSOL (stake-and-wrap) and wstacSOL → SOL
+        // (unwrap-and-unstake). Needs the wallet adapter.
+        <Providers>
+          <WrapPage />
+        </Providers>
       ) : isTrade ? (
         // /trade — curve-launchpad buy/sell, transparently routed through
         // stacSOL as the quote token. User sees SOL in / SOL out. See
         // src/Trade.tsx + src/lib/sanctum-route.ts.
         <Providers>
           <Trade />
+        </Providers>
+      ) : isCreate ? (
+        // /create — launch a new bonding curve. Image + metadata go through
+        // /api/upload (Vercel Blob), then ixCurveCreate signs+sends.
+        <Providers>
+          <CreateCurve />
         </Providers>
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter

@@ -1,6 +1,6 @@
 // Minimal curve-launchpad client.
 //
-// The on-chain program lives at `Cpm3iVenngWyh3YQUXtjR1PudXBXfJJqLhxMGrDiVSkW`
+// The on-chain program lives at `GLstzf6zSDdU44K1GUCPKy9NyZx7qyUpb9L8qrXCrADo`
 // (see ~/triton/curve-launchpad/programs/curve-launchpad/src/lib.rs). It's an
 // Anchor-style bonding-curve launchpad whose quote token was migrated from
 // native SOL to an LST (stacSOL — see SPEC.md §1). The program is unaware of
@@ -34,7 +34,7 @@ import { MINT as QUOTE_MINT } from './constants'
 
 // Curve-launchpad program ID (declared in curve-launchpad/src/lib.rs).
 export const CURVE_LAUNCHPAD_PROGRAM_ID = new PublicKey(
-  'Cpm3iVenngWyh3YQUXtjR1PudXBXfJJqLhxMGrDiVSkW',
+  'GLstzf6zSDdU44K1GUCPKy9NyZx7qyUpb9L8qrXCrADo',
 )
 
 // Anchor `#[event_cpi]` ABI requires the event-authority PDA + program self
@@ -87,6 +87,42 @@ const SELL_DISCRIMINATOR = new Uint8Array([
 const WITHDRAW_DISCRIMINATOR = new Uint8Array([
   183, 18, 70, 156, 148, 109, 161, 34,
 ])
+/** sha256("global:create")[..8] */
+const CREATE_DISCRIMINATOR = new Uint8Array([
+  24, 30, 200, 40, 5, 28, 7, 119,
+])
+
+// Metaplex Token Metadata program — used to derive the `metadata` PDA on
+// create. Fixed mainnet address (also valid on devnet).
+const METAPLEX_TOKEN_METADATA_PROGRAM_ID = new PublicKey(
+  'metaqbxxUerdq28cj1RbAWkYQm3ybzjb6a8bt518x1s',
+)
+
+// PDA for the create ix's mint authority. Seeds: [b"mint-authority"].
+const MINT_AUTHORITY_SEED = Buffer.from('mint-authority')
+function deriveMintAuthority(programId = CURVE_LAUNCHPAD_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([MINT_AUTHORITY_SEED], programId)[0]
+}
+
+function deriveMetadata(mint: PublicKey): PublicKey {
+  return PublicKey.findProgramAddressSync(
+    [
+      Buffer.from('metadata'),
+      METAPLEX_TOKEN_METADATA_PROGRAM_ID.toBytes(),
+      mint.toBytes(),
+    ],
+    METAPLEX_TOKEN_METADATA_PROGRAM_ID,
+  )[0]
+}
+
+// Borsh-encodes a String: 4-byte LE length + UTF-8 bytes.
+const borshString = (s: string): Uint8Array => {
+  const bytes = new TextEncoder().encode(s)
+  const out = new Uint8Array(4 + bytes.length)
+  new DataView(out.buffer).setUint32(0, bytes.length, true)
+  out.set(bytes, 4)
+  return out
+}
 
 const u64le = (v: bigint | number) => {
   const n = BigInt(v)
@@ -197,6 +233,74 @@ function resolveAccounts(args: TradeAccounts): ResolvedTradeAccounts {
 // `#[event_cpi]` macro appends `event_authority` + program self after the
 // declared accounts.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// create ix — launches a new bonding curve. The MEME mint must be a fresh
+// keypair (signer); the program init's its supply, transfers it into the
+// curve's MEME ATA, and revokes both freeze + mint authority on the spot.
+//
+// Account ordering matches `instructions/create.rs`'s `#[derive(Accounts)]`:
+//   mint (signer), creator (signer), mint_authority, bonding_curve,
+//   bonding_curve_token_account, global, metadata, system_program,
+//   token_program, associated_token_program, token_metadata_program, rent,
+//   then the #[event_cpi] trailing pair (event_authority + program self).
+// ---------------------------------------------------------------------------
+
+export interface CreateParams {
+  /** Fresh keypair pubkey for the new MEME mint. Caller signs the tx with it. */
+  mint: PublicKey
+  /** The wallet launching the curve (pays rent + becomes the metadata payer). */
+  creator: PublicKey
+  /** Token name (Metaplex metadata). */
+  name: string
+  /** Token symbol (Metaplex metadata). */
+  symbol: string
+  /** Off-chain JSON metadata URI (Vercel Blob URL pointing to the metadata.json). */
+  uri: string
+}
+
+export function ixCurveCreate(params: CreateParams): TransactionInstruction {
+  const { mint, creator, name, symbol, uri } = params
+  const bondingCurve = deriveBondingCurve(mint)
+  const bondingCurveTokenAccount = getAssociatedTokenAddressSync(
+    mint,
+    bondingCurve,
+    true,
+    TOKEN_PROGRAM_ID,
+  )
+  const mintAuthority = deriveMintAuthority()
+  const metadata = deriveMetadata(mint)
+
+  const data = concat(
+    CREATE_DISCRIMINATOR,
+    borshString(name),
+    borshString(symbol),
+    borshString(uri),
+  )
+
+  return new TransactionInstruction({
+    programId: CURVE_LAUNCHPAD_PROGRAM_ID,
+    keys: [
+      { pubkey: mint, isSigner: true, isWritable: true },
+      { pubkey: creator, isSigner: true, isWritable: true },
+      { pubkey: mintAuthority, isSigner: false, isWritable: false },
+      { pubkey: bondingCurve, isSigner: false, isWritable: true },
+      { pubkey: bondingCurveTokenAccount, isSigner: false, isWritable: true },
+      { pubkey: deriveGlobal(), isSigner: false, isWritable: false },
+      { pubkey: metadata, isSigner: false, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+      { pubkey: TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: ASSOCIATED_TOKEN_PROGRAM_ID, isSigner: false, isWritable: false },
+      { pubkey: METAPLEX_TOKEN_METADATA_PROGRAM_ID, isSigner: false, isWritable: false },
+      // Rent sysvar — Anchor expects this account at this slot for the create ix.
+      { pubkey: new PublicKey('SysvarRent111111111111111111111111111111111'), isSigner: false, isWritable: false },
+      // #[event_cpi] trailing pair.
+      { pubkey: deriveEventAuthority(CURVE_LAUNCHPAD_PROGRAM_ID), isSigner: false, isWritable: false },
+      { pubkey: CURVE_LAUNCHPAD_PROGRAM_ID, isSigner: false, isWritable: false },
+    ],
+    data: Buffer.from(data),
+  })
+}
 
 export interface BuyParams extends TradeAccounts {
   /** Atomic units of MEME the user is buying. */
