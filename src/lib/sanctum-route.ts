@@ -130,13 +130,59 @@ export interface BuiltBuy {
  * round-trip if the program's `init_if_needed` path is missed (e.g. user
  * lacks rent for both ATAs because the deposit hasn't landed yet).
  */
+/**
+ * Inverse of the AMM `get_buy_price`: given a quote-LST budget (gross of
+ * fee), return the maximum MEME atoms the curve will sell at that budget.
+ *
+ * Derivation from the constant-product invariant `vq*vt = k`:
+ *   tokens_out = vt * effQuote / (vq + effQuote)
+ *   where effQuote = budget * 10000 / (10000 + feeBps)  (back out the fee
+ *   that buy.rs adds on top of `quote_amount`).
+ *
+ * Result is clamped to `realTokenReserves` so we never propose buying more
+ * MEME than the curve actually has.
+ */
+function maxTokensForBudget(
+  curve: BondingCurveState,
+  lstBudget: bigint,
+  feeBps: bigint,
+): bigint {
+  if (lstBudget <= 0n) return 0n
+  const effQuote = (lstBudget * 10000n) / (10000n + feeBps)
+  const tokens = (curve.virtualTokenReserves * effQuote) / (curve.virtualQuoteReserves + effQuote)
+  return tokens < curve.realTokenReserves ? tokens : curve.realTokenReserves
+}
+
 export function buildBuy(args: BuildBuyArgs): BuiltBuy {
   const slippageBps = args.lstSlippageBps ?? DEFAULT_LST_SLIPPAGE_BPS
   const lstExpected = previewSolToLst(args.solLamports, args.pool)
-  // Pre-curve preview of what max_quote_cost the curve will charge.
-  const preview = previewBuy(
+
+  // The caller's tokenAmount is sized from the SOL the user typed, but the
+  // actual stacSOL that lands in their ATA after the Sanctum DepositSol is
+  // strictly less (pool deposit fee + referral fee). If we let the curve
+  // try to debit `quote_amount(tokenAmount) + fee` and that exceeds
+  // `lstExpected`, the user's quote ATA will not have enough balance and
+  // the program returns InsufficientQuote (0x1776). Re-derive the largest
+  // tokenAmount that fits inside `lstExpected` minus a 1% safety margin to
+  // absorb the Sanctum transfer-fee gross-up + rounding.
+  let effectiveTokenAmount = args.tokenAmount
+  const naivePreview = previewBuy(
     args.bondingCurve,
     args.tokenAmount,
+    args.global.feeBasisPoints,
+  )
+  if (naivePreview.totalQuote > lstExpected) {
+    const safetyBudget = padDown(lstExpected, 100n) // 1% below the actual mint
+    effectiveTokenAmount = maxTokensForBudget(
+      args.bondingCurve,
+      safetyBudget,
+      args.global.feeBasisPoints,
+    )
+  }
+
+  const preview = previewBuy(
+    args.bondingCurve,
+    effectiveTokenAmount,
     args.global.feeBasisPoints,
   )
   // Cap at the expected LST receipt, padded up so a brief rate dip between
@@ -163,7 +209,7 @@ export function buildBuy(args: BuildBuyArgs): BuiltBuy {
       user: args.user,
       feeRecipient: args.feeRecipient,
       mint: args.mint,
-      tokenAmount: args.tokenAmount,
+      tokenAmount: effectiveTokenAmount,
       maxQuoteCost,
     }),
   )
