@@ -1,6 +1,6 @@
 // Minimal curve-launchpad client.
 //
-// The on-chain program lives at `Eys5uBvuPBvfYu7s3c8GkuANWqQcsdUc3xw2fFYpvwD6`
+// The on-chain program lives at `9unZr9AhShZBhdmF4gLY9qF9AUmqgw8pMoZcKtof1Wfz`
 // (see ~/triton/curve-launchpad/programs/curve-launchpad/src/lib.rs). It's an
 // Anchor-style bonding-curve launchpad whose quote token was migrated from
 // native SOL to an LST (stacSOL — see SPEC.md §1). The program is unaware of
@@ -34,7 +34,7 @@ import { MINT as QUOTE_MINT } from './constants'
 
 // Curve-launchpad program ID (declared in curve-launchpad/src/lib.rs).
 export const CURVE_LAUNCHPAD_PROGRAM_ID = new PublicKey(
-  'Eys5uBvuPBvfYu7s3c8GkuANWqQcsdUc3xw2fFYpvwD6',
+  '9unZr9AhShZBhdmF4gLY9qF9AUmqgw8pMoZcKtof1Wfz',
 )
 
 // Anchor `#[event_cpi]` ABI requires the event-authority PDA + program self
