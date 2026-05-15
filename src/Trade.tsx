@@ -43,6 +43,8 @@ import { buildBuy, buildSell, previewSolToLst, previewLstToSol } from './lib/san
 import { fireBurn, fireMint, shake, summarizeError } from './lib/confetti'
 import EditorialNav from './components/EditorialNav'
 import WalletPill from './components/WalletPill'
+import { PriceChart } from './components/PriceChart'
+import { useTokenMetadata } from './hooks/useTokenMetadata'
 
 // Sanctum SPL stake-pool referral ATA — the stacc-launchpad referrer
 // receives a slice of each SOL→stacSOL deposit fee. Hardcoded because
@@ -79,6 +81,7 @@ export default function Trade() {
   const solLamports = useSolBalance(publicKey)
 
   const mint = useMemo(parseMintFromUrl, [])
+  const { data: metadata } = useTokenMetadata(connection, mint)
 
   const [global, setGlobal] = useState<GlobalState | null>(null)
   const [curve, setCurve] = useState<BondingCurveState | null>(null)
@@ -407,14 +410,86 @@ export default function Trade() {
     }
   })()
 
+  const tokenName = metadata?.off?.name ?? metadata?.on.name ?? 'Loading…'
+  const tokenSymbol = metadata?.off?.symbol ?? metadata?.on.symbol ?? '…'
+  const tokenImage = metadata?.off?.image ?? null
+  const tokenDesc = metadata?.off?.description ?? null
+  const tokenTwitter = metadata?.off?.twitter ?? null
+  const tokenWebsite = metadata?.off?.website ?? null
+  const tokenTelegram = metadata?.off?.telegram ?? null
+
   return (
     <>
       <EditorialNav pathname="/trade" ctaSlot={<WalletPill />} />
       <main style={{ maxWidth: 720, margin: '0 auto', padding: '32px 24px 96px' }}>
-        <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.01em' }}>Trade</h1>
-        <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-dim, #888)' }}>
-          curve {mint.toBase58().slice(0, 6)}…{mint.toBase58().slice(-6)} ·{' '}
-          program {CURVE_LAUNCHPAD_PROGRAM_ID.toBase58().slice(0, 6)}…
+        <div style={{ display: 'flex', gap: 20, alignItems: 'flex-start' }}>
+          {tokenImage && (
+            <img
+              src={tokenImage}
+              alt={tokenName}
+              style={{
+                width: 96,
+                height: 96,
+                borderRadius: 12,
+                objectFit: 'cover',
+                border: '1px solid rgb(0 0 0 / 0.12)',
+                flexShrink: 0,
+              }}
+              onError={(e) => {
+                ;(e.target as HTMLImageElement).style.display = 'none'
+              }}
+            />
+          )}
+          <div style={{ flex: 1, minWidth: 0 }}>
+            <h1 style={{ fontSize: 32, fontWeight: 900, letterSpacing: '-0.01em', margin: 0 }}>
+              {tokenName}{' '}
+              <span style={{ fontSize: 18, color: 'var(--color-dim, #888)', fontWeight: 600 }}>
+                ${tokenSymbol}
+              </span>
+            </h1>
+            <div style={{ marginTop: 4, fontSize: 12, color: 'var(--color-dim, #888)' }}>
+              curve {mint.toBase58().slice(0, 6)}…{mint.toBase58().slice(-6)} ·{' '}
+              program {CURVE_LAUNCHPAD_PROGRAM_ID.toBase58().slice(0, 6)}…
+            </div>
+            {tokenDesc && (
+              <p style={{ marginTop: 12, fontSize: 13, color: 'var(--color-text, #444)', lineHeight: 1.5 }}>
+                {tokenDesc.slice(0, 280)}
+              </p>
+            )}
+            {(tokenTwitter || tokenWebsite || tokenTelegram) && (
+              <div style={{ marginTop: 8, display: 'flex', gap: 12, fontSize: 12 }}>
+                {tokenWebsite && (
+                  <a href={tokenWebsite} target="_blank" rel="noreferrer" style={{ color: '#0a6e3c' }}>
+                    site
+                  </a>
+                )}
+                {tokenTwitter && (
+                  <a
+                    href={tokenTwitter.startsWith('http') ? tokenTwitter : `https://x.com/${tokenTwitter.replace(/^@/, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#0a6e3c' }}
+                  >
+                    twitter
+                  </a>
+                )}
+                {tokenTelegram && (
+                  <a
+                    href={tokenTelegram.startsWith('http') ? tokenTelegram : `https://t.me/${tokenTelegram.replace(/^@/, '')}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    style={{ color: '#0a6e3c' }}
+                  >
+                    telegram
+                  </a>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+        <div style={{ marginTop: 24, padding: 12, border: '1px solid rgb(0 0 0 / 0.08)', borderRadius: 8 }}>
+          <PriceChart mint={mint.toBase58()} bucketSec={300} />
         </div>
 
         <div
