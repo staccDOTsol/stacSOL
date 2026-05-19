@@ -27,17 +27,9 @@ interface Props {
   ctaSlot?: React.ReactNode
 }
 
-// External host for the stacc-flip casino lobby. Defaults to prod
-// (stacflip.app); override with VITE_FLIP_URL for local dev / staging.
-const FLIP_URL =
-  (import.meta as unknown as { env?: { VITE_FLIP_URL?: string } }).env
-    ?.VITE_FLIP_URL ?? 'https://stacflip.app'
-
 const NAV_LINKS = [
   { id: '/', label: 'Home' },
   { id: '/app', label: 'App' },
-  { id: '/launches', label: 'sinbad' },
-  { id: FLIP_URL, label: 'eureka', external: true },
   { id: '/portfolio', label: 'Portfolio' },
   { id: '/leaderboard', label: 'Leaderboard' },
   { id: '/faq', label: 'FAQ' },
