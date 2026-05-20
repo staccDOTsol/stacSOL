@@ -46,7 +46,10 @@ import { fireBurn, fireMint, summarizeError } from './lib/confetti'
 
 const FEE = 0.069
 
-function fmt(n: number | null | undefined, d = 4): string {
+// Default precision bumped 4 → 6 to match App/Mobile/format.ts. See
+// lib/format.ts fmtAmount for the rationale (small token amounts no longer
+// round to 0.0000).
+function fmt(n: number | null | undefined, d = 6): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return Number(n).toLocaleString(undefined, {
     minimumFractionDigits: d,
@@ -123,14 +126,13 @@ function StakeAndWrapCard({
       const ixs: TransactionInstruction[] = [
         ComputeBudgetProgram.setComputeUnitLimit({ units: 600_000 }),
       ]
-      // Idempotent ATA creates — user's stacSOL ATA + manager fee ATA +
-      // wrapped (legacy SPL) ATA. The wrap ix is itself init_if_needed for
-      // the wrapped ATA but pre-creating shaves bytes and stops mobile
-      // wallets from choking on the bigger ix.
+      // Idempotent ATA creates — user's stacSOL ATA + wrapped (legacy SPL)
+      // ATA. The stake-pool manager fee account is already a Token-2022
+      // account stored in pool state; it is not a wallet owner to derive an
+      // ATA from.
       const userStacAta = deriveAta(pubkey, MINT, TOKEN_2022)
       const acc = await connection.getAccountInfo(userStacAta, 'processed')
       if (!acc) ixs.push(ixCreateAtaIdempotent(pubkey, pubkey, MINT))
-      ixs.push(ixCreateAtaIdempotent(pubkey, pool.managerFeeAccount, MINT))
       ixs.push(ixCreateWrappedAtaIdempotent(pubkey, pubkey))
       // Referrer ATA gets 50% of the 6.9% deposit fee (the other 50% goes
       // to the pool manager's fee account). Without this slot the
@@ -195,7 +197,7 @@ function StakeAndWrapCard({
       })
       setStatus({
         s: 'ok',
-        m: `Staked & wrapped ${fmt(value, 4)} SOL → ${fmt(expected, 6)} wstacSOL`,
+        m: `Staked & wrapped ${fmt(value)} SOL → ${fmt(expected)} wstacSOL`,
         sig,
       })
       fireMint()
@@ -213,7 +215,7 @@ function StakeAndWrapCard({
         <div className="panel-row">
           <span className="field-label">Stake & Wrap</span>
           <span className="field-balance">
-            balance{' '}
+            available{' '}
             <b
               className="clickable"
               onClick={() => setPercent(100)}
@@ -224,7 +226,7 @@ function StakeAndWrapCard({
                   <span className="spin" style={{ marginRight: 6 }} />—
                 </>
               ) : (
-                <>{fmt(maxAvailable, 4)} SOL</>
+                <>{fmt(maxAvailable)} SOL</>
               )}
             </b>
           </span>
@@ -503,7 +505,7 @@ function UnwrapAndUnstakeCard({
       })
       setStatus({
         s: 'ok',
-        m: `Unwrapped & unstaked ${fmt(value, 4)} wstacSOL → ${fmt(expected, 6)} SOL`,
+        m: `Unwrapped & unstaked ${fmt(value)} wstacSOL → ${fmt(expected)} SOL`,
         sig,
       })
       fireBurn()
@@ -701,11 +703,11 @@ export default function WrapPage() {
   // before scrolling to the action cards.
   const wstacFmt =
     walletWstacAtom != null
-      ? fmt(Number(walletWstacAtom) / Math.pow(10, DECIMALS), 4)
+      ? fmt(Number(walletWstacAtom) / Math.pow(10, DECIMALS))
       : null
   const stacFmt =
     walletStacAtom != null
-      ? fmt(Number(walletStacAtom) / Math.pow(10, DECIMALS), 4)
+      ? fmt(Number(walletStacAtom) / Math.pow(10, DECIMALS))
       : null
 
   return (

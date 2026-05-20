@@ -42,8 +42,13 @@ const ATOMS_PER_LST = 1_000_000_000
 function formatLst(atomsStr: string): string {
   const atoms = BigInt(atomsStr || '0')
   const whole = Number(atoms) / ATOMS_PER_LST
+  // Bucketed precision: small values get more decimals (consistent with the
+  // 6dp default used everywhere else for SOL / stacSOL displays), large
+  // values stay readable. The < 100 branch keeps 2dp because rendering
+  // 95.123456 at hero size is just visual noise; if you want lamport-level
+  // precision for a 95-token holding, the row drilldown surfaces it.
   if (whole < 0.001) return whole.toExponential(2)
-  if (whole < 1) return whole.toFixed(4)
+  if (whole < 1) return whole.toFixed(6)
   if (whole < 100) return whole.toFixed(2)
   return Math.round(whole).toLocaleString()
 }

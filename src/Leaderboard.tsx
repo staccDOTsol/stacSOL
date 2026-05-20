@@ -226,6 +226,8 @@ const COLUMNS: ColumnSpec[] = [
   },
 ]
 
+// 6dp for the same reason fmtSolFloat / fmtAmount were bumped: sub-0.0001
+// SOL net values previously read as `0.0000` on the row's net-SOL cell.
 const fmtSolNum = (lamports: bigint | string | number) => {
   const big =
     typeof lamports === 'bigint'
@@ -234,8 +236,8 @@ const fmtSolNum = (lamports: bigint | string | number) => {
       ? BigInt(lamports || '0')
       : BigInt(Math.round(lamports))
   return (Number(big) / LAMPORTS_PER_SOL).toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 6,
   })
 }
 

@@ -50,7 +50,11 @@ import type { Position } from './lib/position'
 
 const FEE = 0.069
 
-function fmt(n: number | null | undefined, d = 4): string {
+// Default precision bumped 4 → 6: see lib/format.ts fmtAmount for rationale.
+// 6dp matches the redemption-rate precision and surfaces sub-0.0001 token
+// values (earned dust, referral credits, tiny burns) that previously rounded
+// to `0.0000`.
+function fmt(n: number | null | undefined, d = 6): string {
   if (n == null || !Number.isFinite(n)) return '—'
   return Number(n).toLocaleString(undefined, {
     minimumFractionDigits: d,
@@ -98,8 +102,8 @@ function PoolStats({ pool, rate, perf }: { pool: PoolState | null; rate: number;
   const backing = pool ? Number(pool.poolTotalLamports) / 1e9 : 0
   const supply = pool ? Number(pool.poolTokenSupplyAccounting) / 1e9 : 0
   const stats = [
-    { k: 'Backing', v: fmt(backing, 2), u: 'SOL', s: 'pool.total_lamports' },
-    { k: 'Supply', v: fmt(supply, 2), u: 'stacSOL', s: 'pool.pool_token_supply' },
+    { k: 'Backing', v: fmt(backing), u: 'SOL', s: 'pool.total_lamports' },
+    { k: 'Supply', v: fmt(supply), u: 'stacSOL', s: 'pool.pool_token_supply' },
     {
       k: 'Redemption rate',
       v: rate.toFixed(6),
@@ -657,7 +661,7 @@ function ActionPanel({
               : 'Unwrapped'
       setStatus({
         s: 'ok',
-        m: `${verb} ${fmt(value, 4)} ${inputToken} → ${fmt(out, 6)} ${outToken}`,
+        m: `${verb} ${fmt(value)} ${inputToken} → ${fmt(out)} ${outToken}`,
         sig,
       })
       if (tab === 'mint') fireMint()
@@ -726,7 +730,7 @@ function ActionPanel({
                 </>
               ) : (
                 <>
-                  {fmt(maxAvailable, tab === 'mint' ? 4 : 6)} {inputToken}
+                  {fmt(maxAvailable)} {inputToken}
                 </>
               )}
             </b>
@@ -857,7 +861,7 @@ function ActionPanel({
             </div>
             <div className="ec-sub">
               Keeps {fmt(earnedHint.keepStac, 6)} stacSOL ≈ your{' '}
-              {fmt(earnedHint.cost, 4)} SOL principal at current NAV, still
+              {fmt(earnedHint.cost)} SOL principal at current NAV, still
               earning. Tap to fill, then Burn.
             </div>
           </div>
@@ -975,8 +979,8 @@ function ActionPanel({
               lineHeight: 1.6,
             }}
           >
-            ⓘ wallet {fmt(walletStac, 4)} burnable here · {fmt(lpStac, 4)} in
-            LP positions (total {fmt(walletStac + lpStac, 4)}). Withdraw LP
+            ⓘ wallet {fmt(walletStac)} burnable here · {fmt(lpStac)} in
+            LP positions (total {fmt(walletStac + lpStac)}). Withdraw LP
             via{' '}
             <a
               href="/portfolio"
@@ -1128,10 +1132,10 @@ function PositionCard({
           </span>
         ) : (
           <>
-            ≈ <b className="tabular">{fmt(netValue, 4)} SOL</b> if burned now
+            ≈ <b className="tabular">{fmt(netValue)} SOL</b> if burned now
             <span style={{ color: 'var(--ink-muted)' }}>
               {' · '}
-              {fmt(grossValue, 4)} at NAV
+              {fmt(grossValue)} at NAV
             </span>
           </>
         )}
@@ -1185,20 +1189,20 @@ function PositionCard({
               ? 'connect wallet'
               : ld(
                   costLoading,
-                  hasCostBasis ? `${fmt(costSol, 4)} SOL` : 'no mints yet',
+                  hasCostBasis ? `${fmt(costSol)} SOL` : 'no mints yet',
                 )}
           </span>
         </div>
         <div className="pt-row">
           <span className="pt-k">Mark · NAV {rate.toFixed(6)}</span>
           <span className="pt-v tabular">
-            {ld(balanceLoading, `${fmt(grossValue, 4)} SOL`)}
+            {ld(balanceLoading, `${fmt(grossValue)} SOL`)}
           </span>
         </div>
         <div className="pt-row">
           <span className="pt-k">Burn payout (−6.9%)</span>
           <span className="pt-v tabular">
-            {ld(balanceLoading, `${fmt(netValue, 4)} SOL`)}
+            {ld(balanceLoading, `${fmt(netValue)} SOL`)}
           </span>
         </div>
         {hasCostBasis && !balanceLoading && !costLoading && (
@@ -1211,7 +1215,7 @@ function PositionCard({
             </span>
             <span className={`pt-v tabular ${gain ? 'gain' : 'loss'}`}>
               {gain ? '+' : ''}
-              {fmt(pnl, 4)} SOL · {gain ? '+' : ''}
+              {fmt(pnl)} SOL · {gain ? '+' : ''}
               {pnlPct.toFixed(2)}%
             </span>
           </div>

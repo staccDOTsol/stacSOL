@@ -1,6 +1,10 @@
 import { DECIMALS } from './constants'
 
-export function fmtAmount(big: bigint, decimals = DECIMALS, places = 4) {
+// `places` default bumped 4 → 6: any sub-0.0001 token amount (referral
+// credits, dust burns, tiny LP shares) previously rounded to `0.0000`. 6dp
+// surfaces real values like `0.000123` and matches the redemption-rate
+// precision used elsewhere on the site.
+export function fmtAmount(big: bigint, decimals = DECIMALS, places = 6) {
   const n = Number(big) / Math.pow(10, decimals)
   return n.toLocaleString(undefined, {
     maximumFractionDigits: places,

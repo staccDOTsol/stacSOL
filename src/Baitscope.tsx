@@ -127,7 +127,11 @@ function lamportsToSol(s: string | number | bigint) {
   return Number(s) / 1e9
 }
 
-function fmtSol(n: number, decimals = 4) {
+// 4 → 6dp default, in step with App/Wrap/Mobile/format.ts. Chart-axis
+// formatters elsewhere in this file keep 3dp because long tick labels
+// destroy the chart layout — only the inline / table / hero SOL displays
+// flow through this helper.
+function fmtSol(n: number, decimals = 6) {
   return n.toFixed(decimals)
 }
 
@@ -274,9 +278,9 @@ function CountersCard({ feed }: { feed: FeedResponse | null }) {
   return (
     <Card title="Live state">
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-2">
-        <Stat label="Outstanding" value={fmtSol(outstanding, 4)} unit="SOL" tone="warn" />
-        <Stat label="Lifetime cost" value={fmtSol(cost, 4)} unit="SOL" />
-        <Stat label="Lifetime recovered" value={fmtSol(recovered, 4)} unit="SOL" tone="good" />
+        <Stat label="Outstanding" value={fmtSol(outstanding)} unit="SOL" tone="warn" />
+        <Stat label="Lifetime cost" value={fmtSol(cost)} unit="SOL" />
+        <Stat label="Lifetime recovered" value={fmtSol(recovered)} unit="SOL" tone="good" />
         <Stat
           label="Bait / recovery cycles"
           value={`${cycles} / ${recoveryCycles}`}
@@ -372,19 +376,19 @@ function AttributionCard({ feed }: { feed: FeedResponse | null }) {
         <div>
           <Stat
             label="Transfer volume (stacSOL)"
-            value={a ? a.transferVolumeStac.toFixed(4) : '—'}
+            value={a ? a.transferVolumeStac.toFixed(6) : '—'}
             unit="stacSOL"
             tone="hot"
           />
           <div className="mt-3 grid grid-cols-2 gap-2">
             <Stat
               label="Bait volume"
-              value={a && mathSane ? a.baitVolumeStac.toFixed(4) : '—'}
+              value={a && mathSane ? a.baitVolumeStac.toFixed(6) : '—'}
               unit="stacSOL"
             />
             <Stat
               label="Arber + organic"
-              value={a && mathSane ? a.arbVolumeStac.toFixed(4) : '—'}
+              value={a && mathSane ? a.arbVolumeStac.toFixed(6) : '—'}
               unit="stacSOL"
               tone="good"
             />
@@ -392,12 +396,12 @@ function AttributionCard({ feed }: { feed: FeedResponse | null }) {
           <div className="mt-3 grid grid-cols-2 gap-2">
             <Stat
               label="Burned SOL value"
-              value={a ? fmtSol(a.burnedSolValue, 4) : '—'}
+              value={a ? fmtSol(a.burnedSolValue) : '—'}
               unit="SOL"
             />
             <Stat
               label="Arb-attributed NAV gain"
-              value={a && mathSane ? fmtSol(a.arbBurnedSol, 4) : '—'}
+              value={a && mathSane ? fmtSol(a.arbBurnedSol) : '—'}
               unit="SOL"
               tone="good"
             />
@@ -439,7 +443,7 @@ function AttributionCard({ feed }: { feed: FeedResponse | null }) {
                 />
                 <Tooltip
                   contentStyle={tooltipStyle}
-                  formatter={(v, n) => [Number(v).toFixed(4) + ' stacSOL', String(n)]}
+                  formatter={(v, n) => [Number(v).toFixed(6) + ' stacSOL', String(n)]}
                 />
               </PieChart>
             </ResponsiveContainer>
@@ -472,7 +476,7 @@ function BaitSeriesCard({ feed }: { feed: FeedResponse | null }) {
             <Tooltip
               contentStyle={tooltipStyle}
               labelFormatter={(v) => fmtTimeOfDaySec(Number(v))}
-              formatter={(v, n) => [Number(v).toFixed(4) + ' SOL', String(n)]}
+              formatter={(v, n) => [Number(v).toFixed(6) + ' SOL', String(n)]}
             />
             <Legend wrapperStyle={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 2 }} />
             <Bar dataKey="costSol" stackId="a" name="cost" fill="#ff3300" />
@@ -502,7 +506,7 @@ function BurnVelocityCard({ feed }: { feed: FeedResponse | null }) {
             <Tooltip
               contentStyle={tooltipStyle}
               labelFormatter={(v) => fmtTimeOfDaySec(Number(v))}
-              formatter={(v, n) => [Number(v).toFixed(4) + ' stacSOL', String(n)]}
+              formatter={(v, n) => [Number(v).toFixed(6) + ' stacSOL', String(n)]}
             />
             <Legend wrapperStyle={{ fontSize: 10, textTransform: 'uppercase', letterSpacing: 2 }} />
             <Area
@@ -602,12 +606,12 @@ function VenueRollupCard({ feed }: { feed: FeedResponse | null }) {
               >
                 <td className="py-2 font-mono">{r.venueLabel}</td>
                 <td className="py-2 text-right">{r.cycles}</td>
-                <td className="py-2 text-right">{r.sizeSol.toFixed(3)}</td>
+                <td className="py-2 text-right">{r.sizeSol.toFixed(6)}</td>
                 <td className="py-2 text-right text-[var(--color-hot)]">
-                  {r.costSol > 0 ? r.costSol.toFixed(4) : '—'}
+                  {r.costSol > 0 ? r.costSol.toFixed(6) : '—'}
                 </td>
                 <td className="py-2 text-right text-[var(--color-good,#22ee88)]">
-                  {r.profitSol > 0 ? r.profitSol.toFixed(4) : '—'}
+                  {r.profitSol > 0 ? r.profitSol.toFixed(6) : '—'}
                 </td>
                 <td
                   className={

@@ -246,7 +246,7 @@ export function YieldCalc({ pool }: Props) {
                 </div>
                 <div className="mt-1 leading-none">
                   <span className="tabular-mono text-3xl font-extrabold text-[var(--color-fg)]">
-                    {(solDepositNeeded * 0.931 / rate).toFixed(3)}
+                    {(solDepositNeeded * 0.931 / rate).toFixed(6)}
                   </span>
                   <span className="text-[11px] text-[var(--color-dim)] ml-1.5 uppercase tracking-wider">
                     stacSOL
