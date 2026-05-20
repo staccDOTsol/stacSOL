@@ -89,19 +89,58 @@ async function fetchLiveRate(): Promise<number | null> {
   }
 }
 
-// Reliability guards. Tiny windows of history (a couple of snapshots minutes
-// apart) compute essentially-zero daily rates that don't reflect the
-// protocol's actual trajectory; oversize windows (huge ratio over a few
-// hours, e.g. the first day after deploy) blow up to obviously-fake APRs.
-// Inside [MIN, MAX) the number is plausible; outside, we show "—" rather
-// than mislead.
-// Caps tightened after a tiny NAV blip rendered "43,906%" / "44,290%"
-// in the wild. Require ≥2 days of history (a single flip can't ride the
-// extrapolator that long) and cap displayed APR at 1,000% (anything
-// wilder is almost certainly annualizing a transient spike).
-const MIN_HISTORY_SPAN_DAYS = 2
+// Reliability guards.
+//
+// Old strategy: pick the snapshot closest to "24h ago" and use that
+// single point. This went dark whenever that exact snapshot happened to
+// share a rate with the latest one (manager-fee-only windows, idle
+// epochs, or just round-trip equality in the indexed values) — even
+// though plenty of growth had been recorded earlier in the history.
+//
+// New strategy: walk newest → oldest and use the LONGEST window where
+// `last.rate > sample.rate` AND the computed daily yield is plausible.
+// Longer window ⇒ more averaging ⇒ resilient against transient NAV
+// spikes (which historically rendered "43,906% APR" when the
+// extrapolator latched onto a single anomalous sample). The new caps
+// reject any window whose implied daily rate exceeds MAX_PLAUSIBLE_DAILY
+// — usually means we picked a short pre-spike window; keep searching.
+const MIN_GROWTH_SPAN_DAYS = 1 / 24 // 1h minimum; below this is too noisy
+const PREFERRED_SPAN_DAYS = 1 // try to land near 24h windows when possible
 const MAX_PLAUSIBLE_DAILY = 0.05 // 5%/day · ~6300%/yr compounded
 const MAX_DISPLAYED_APR_PCT = 1_000 // beyond this we render "—"; not believable
+
+/** Walk a history dataset and find the best (longest) window of plausible
+ *  growth. Returns the derived dailyRate or null if the dataset shows no
+ *  trustable trajectory. Algorithm: start with the oldest sample (max
+ *  averaging), step forward while the implied dailyRate is implausible
+ *  (probably an early-deploy chaos window we should skip past) until we
+ *  find a window inside [MIN_GROWTH_SPAN_DAYS, ∞) with dailyRate ≤
+ *  MAX_PLAUSIBLE_DAILY. */
+function findRealizedDailyRate(
+  rows: { ts: number; rate: number }[],
+): { dailyRate: number; dtDays: number } | null {
+  if (rows.length < 2) return null
+  const last = rows[rows.length - 1]
+  if (!(last.rate > 0)) return null
+  // Walk oldest → newest, looking for the longest window that's plausible.
+  for (let i = 0; i < rows.length - 1; i++) {
+    const prev = rows[i]
+    if (!(prev.rate > 0) || !(last.rate > prev.rate)) continue
+    const dtDays = (last.ts - prev.ts) / (1000 * 60 * 60 * 24)
+    if (dtDays < MIN_GROWTH_SPAN_DAYS) break // remaining windows are even shorter
+    const dailyRate = Math.pow(last.rate / prev.rate, 1 / dtDays) - 1
+    if (dailyRate > 0 && dailyRate <= MAX_PLAUSIBLE_DAILY) {
+      return { dailyRate, dtDays }
+    }
+    // Else this window is implausible (early-deploy spike). Skip forward
+    // — by moving `prev` newer, dtDays shrinks and the spike's
+    // contribution dilutes, eventually landing on a stable region.
+  }
+  return null
+}
+// Re-export for the unified Stats card so both surfaces share the same
+// "find a usable window" logic.
+export { findRealizedDailyRate, MAX_DISPLAYED_APR_PCT, PREFERRED_SPAN_DAYS }
 
 function useLivePerf(refreshMs = 30_000): PerfState {
   const [state, setState] = useState<PerfState>(INITIAL)
@@ -130,36 +169,21 @@ function useLivePerf(refreshMs = 30_000): PerfState {
 
       // 2. Historical rate trajectory → realised compound daily yield +
       //    doubling time. Only available when /api/history is reachable
-      //    (deployed Vercel build, or vite dev with proxy). Guards:
-      //    - need ≥ MIN_HISTORY_SPAN_DAYS of span so tiny windows don't
-      //      compute essentially-zero daily rates
-      //    - reject dailyRate above MAX_PLAUSIBLE_DAILY as data noise
+      //    (deployed Vercel build, or vite dev with proxy). Uses the
+      //    "find a usable window" helper — see findRealizedDailyRate.
       try {
         const r = await fetch('/api/history?limit=500')
         if (r.ok) {
           const rows: { ts: number; rate: number }[] = await r.json()
-          if (Array.isArray(rows) && rows.length > 1) {
+          if (Array.isArray(rows) && rows.length > 0) {
             const last = rows[rows.length - 1]
             if (!next.rate && last.rate > 0) next.rate = last.rate
-            const target = last.ts - 24 * 60 * 60 * 1000
-            let prev = rows[0]
-            for (const row of rows) {
-              if (Math.abs(row.ts - target) < Math.abs(prev.ts - target)) {
-                prev = row
-              }
-            }
-            const dtDays = (last.ts - prev.ts) / (1000 * 60 * 60 * 24)
-            if (
-              prev.rate > 0 &&
-              last.rate > prev.rate &&
-              dtDays >= MIN_HISTORY_SPAN_DAYS
-            ) {
-              const dailyRate = Math.pow(last.rate / prev.rate, 1 / dtDays) - 1
-              if (dailyRate > 0 && dailyRate <= MAX_PLAUSIBLE_DAILY) {
-                next.dailyRate = dailyRate
-                next.doublingDays = Math.log(2) / Math.log(1 + dailyRate)
-                next.liveHistory = true
-              }
+            const found = findRealizedDailyRate(rows)
+            if (found) {
+              next.dailyRate = found.dailyRate
+              next.doublingDays =
+                Math.log(2) / Math.log(1 + found.dailyRate)
+              next.liveHistory = true
             }
           }
         }
@@ -208,20 +232,20 @@ function useLivePerf(refreshMs = 30_000): PerfState {
 }
 
 // -----------------------------------------------------------------------------
-// NAV ticker — tiny +ε pip animation so the rate feels alive. While the live
-// rate is loading we render an em-dash so the pip can't accumulate against
-// the placeholder `1.0` and produce a wrong-looking value like 1.000044.
+// Static redemption-rate display.
+//
+// Previously this surface ran a `NavTicker` that bumped the rendered value by
+// `Math.random() * 0.0000018` every 1.1s ("tiny +ε pip animation so the rate
+// feels alive"). Optimus Prime correctly flagged that the on-screen rate
+// climbed even during stretches with zero protocol volume, which is
+// misleading: the rate only moves on (a) per-epoch stake yield via Sanctum's
+// stake pool and (b) the 5-minute burn-loop reconciliation. Between those
+// events it is genuinely flat. Render the actual fetched value with no
+// extrapolation — the surrounding copy still says "climbing" / "↑" because
+// the long-run trajectory is monotonic up, but we no longer fake the per-
+// second motion.
 // -----------------------------------------------------------------------------
-function NavTicker({ rate }: { rate: number | null }) {
-  const [pip, setPip] = useState(0)
-  useEffect(() => {
-    if (rate == null) return
-    const id = setInterval(
-      () => setPip(p => p + Math.random() * 0.0000018),
-      1100,
-    )
-    return () => clearInterval(id)
-  }, [rate])
+function NavValue({ rate }: { rate: number | null }) {
   if (rate == null) {
     return (
       <span className="mono tabular" style={{ color: 'var(--ink-muted)' }}>
@@ -231,7 +255,7 @@ function NavTicker({ rate }: { rate: number | null }) {
   }
   return (
     <span className="mono tabular" style={{ color: 'var(--accent-deep)' }}>
-      {(rate + pip).toFixed(6)}
+      {rate.toFixed(6)}
     </span>
   )
 }
@@ -331,7 +355,7 @@ function HeroBlock({ perf }: { perf: PerfState }) {
         <div className="meta-cell">
           <div className="meta-k">redemption rate</div>
           <div className="meta-v">
-            <NavTicker rate={perf.rate} />
+            <NavValue rate={perf.rate} />
             <sup>↑</sup>
           </div>
           <div className="meta-sub">SOL per stacSOL · climbing</div>
