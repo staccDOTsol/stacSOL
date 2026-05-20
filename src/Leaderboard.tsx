@@ -85,6 +85,9 @@ interface HoldersLeaderboardResponse {
     paidUnderwaterCount?: number
   }
   rate: number | null
+  /** USD price of 1 SOL at response time (CoinGecko-sourced server-side).
+   *  Used to render volume metrics in $. null if the price fetch failed. */
+  solUsd?: number | null
   asOf: number
   nextCursor: string | null
   my: HolderRow | null
@@ -236,10 +239,14 @@ const fmtSolNum = (lamports: bigint | string | number) => {
   })
 }
 
+// 6 decimals so sub-0.0001 SOL earnings render as e.g. `0.000123` rather than
+// collapsing to `0.0000`. Matches the redemption-rate precision (6dp) and the
+// `fmt(x, 6)` pattern used for earned-SOL on the App page. Keep the duplicate
+// in components/Leaderboard.tsx in sync.
 const fmtSolFloat = (sol: number) =>
   sol.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 6,
   })
 
 function fmtRel(ms: number): string {

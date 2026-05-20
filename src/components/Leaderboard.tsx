@@ -55,10 +55,14 @@ interface LeaderboardResponse {
 
 const REFRESH_MS = 60_000
 
+// 6 decimals — see /src/Leaderboard.tsx fmtSolFloat for the rationale. These
+// two helpers must stay in sync; the file-level Leaderboard.tsx is the
+// editorial-design page that the live site renders, and components/Leaderboard
+// is the legacy embedded variant still used inside a few action panels.
 const fmtSolFloat = (n: number) =>
   n.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 6,
   })
 
 const stacAtomToSol = (
