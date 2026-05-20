@@ -28,6 +28,7 @@ import { useSolBalance } from './hooks/useSolBalance'
 import { useStacBalance } from './hooks/useStacBalance'
 import { useWstacBalance } from './hooks/useWstacBalance'
 import { useHistory } from './hooks/useHistory'
+import { findRealizedDailyRate } from './Landing'
 import { useMyHolderRow, type HolderRow } from './hooks/useMyHolderRow'
 import { useEpoch } from './hooks/useEpoch'
 import {
@@ -69,26 +70,24 @@ interface Perf {
   live: boolean
 }
 
+// IMPORTANT: must use the same realised-rate algorithm as Landing.tsx /
+// components/Stats.tsx, otherwise the App's "Daily yield · doubles every X
+// days" cell disagrees with the Landing hero's "DOUBLING TIME · 87-90 days at
+// the current realized rate" card. The bug shipped with a single-fixed-24h
+// window here (target = last.ts - 24h, snap to nearest) while Landing already
+// used findRealizedDailyRate (longest plausible window, ≤5%/day spike cap).
+// Different windows, different answers — same data — users on /app saw
+// ~1.01%/day · 69 days while /  showed ~0.78%/day · 89 days simultaneously.
+// findRealizedDailyRate is re-exported from Landing.tsx specifically so this
+// hook (and Stats.tsx) can share the canonical implementation.
 function usePerf(): Perf {
   const { history } = useHistory()
   return useMemo(() => {
-    if (history.length < 2) return { dailyRate: null, doublingDays: null, live: false }
-    const last = history[history.length - 1]
-    const target = last.ts - 24 * 60 * 60 * 1000
-    let prev = history[0]
-    for (const r of history) {
-      if (Math.abs(r.ts - target) < Math.abs(prev.ts - target)) prev = r
-    }
-    if (!(prev.rate > 0 && last.rate > prev.rate)) {
-      return { dailyRate: null, doublingDays: null, live: false }
-    }
-    const dt = (last.ts - prev.ts) / (1000 * 60 * 60 * 24)
-    if (dt <= 0) return { dailyRate: null, doublingDays: null, live: false }
-    const dailyRate = Math.pow(last.rate / prev.rate, 1 / dt) - 1
-    if (dailyRate <= 0) return { dailyRate: null, doublingDays: null, live: false }
+    const found = findRealizedDailyRate(history)
+    if (!found) return { dailyRate: null, doublingDays: null, live: false }
     return {
-      dailyRate,
-      doublingDays: Math.log(2) / Math.log(1 + dailyRate),
+      dailyRate: found.dailyRate,
+      doublingDays: Math.log(2) / Math.log(1 + found.dailyRate),
       live: true,
     }
   }, [history])
@@ -340,7 +339,6 @@ function ActionPanel({
 
         if (tab === 'mint' && pool) {
           ixs.push(ixCreateAtaIdempotent(pubkey, pubkey, MINT))
-          ixs.push(ixCreateAtaIdempotent(pubkey, pool.managerFeeAccount, MINT))
           // Referrer ATA gets the 50% referrer share of the 6.9% deposit
           // fee. Skip the explicit create when the depositor is referring
           // themselves (their ATA already exists from the create above).
@@ -562,10 +560,6 @@ function ActionPanel({
         const userAta = deriveAta(wallet.publicKey, MINT, TOKEN_2022)
         const acc = await connection.getAccountInfo(userAta, 'processed')
         if (!acc) ixs.push(ixCreateAtaIdempotent(wallet.publicKey, wallet.publicKey, MINT))
-        const managerAta = deriveAta(pool.managerFeeAccount, MINT, TOKEN_2022)
-        const mgrAcc = await connection.getAccountInfo(managerAta, 'processed')
-        if (!mgrAcc)
-          ixs.push(ixCreateAtaIdempotent(wallet.publicKey, pool.managerFeeAccount, MINT))
         // Referrer ATA — collects 50% of the 6.9% deposit fee. Defaults to
         // marketing wallet when no `?ref=…` link was used; honours the
         // user's saved override otherwise. Skip the create when the
@@ -712,7 +706,7 @@ function ActionPanel({
                   : 'unwrap'}
           </span>
           <span className="field-balance">
-            balance{' '}
+            {tab === 'mint' ? 'available' : 'balance'}{' '}
             <b
               className="clickable"
               onClick={() => setPercent(100)}
