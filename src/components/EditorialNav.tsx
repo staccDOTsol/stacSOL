@@ -239,14 +239,24 @@ function MigrationBanner() {
     }
   }, [])
   if (dismissed !== false) return null
+  // Hardcoded colors instead of theme vars — `--ink` and `--ivory` invert
+  // meaning between light/dark mode (they're page text/page paper, not
+  // fixed paint values), so using them as banner background made the
+  // text vanish in light mode (light text on light page bg). Banner
+  // wants to be a constant-dark surface across BOTH themes so the
+  // editorial palette stays calm and the announcement stays legible.
+  const BANNER_BG = '#0a0a0a'
+  const BANNER_FG = '#f7f5ee'
+  const BANNER_LINE = 'rgba(255,255,255,0.18)'
+  const BANNER_LINK = '#7BE0A4'
   return (
     <div
       role="region"
       aria-label="stacSOL announcement"
       style={{
-        background: 'var(--ink, #0a0a0a)',
-        color: 'var(--ivory, #f7f5ee)',
-        borderBottom: '1px solid var(--line, rgba(255,255,255,0.08))',
+        background: BANNER_BG,
+        color: BANNER_FG,
+        borderBottom: `1px solid ${BANNER_LINE}`,
         fontFamily: 'var(--f-sans)',
         fontSize: 13,
         lineHeight: 1.45,
@@ -265,21 +275,21 @@ function MigrationBanner() {
           flexWrap: 'wrap',
         }}
       >
-        <span style={{ flex: '1 1 auto', minWidth: 220 }}>
-          <strong style={{ fontFamily: 'var(--f-display)', letterSpacing: '0.01em' }}>
+        <span style={{ flex: '1 1 auto', minWidth: 220, color: BANNER_FG }}>
+          <strong style={{ fontFamily: 'var(--f-display)', letterSpacing: '0.01em', color: BANNER_FG }}>
             FOMOX402 → stacSOL.
           </strong>{' '}
           Old supply got muckled, liquidity thinned. Game economy is now
           on{' '}
-          <strong>stacSOL</strong> ($STACC, Token-2022, 6.9% burn per
-          transfer). Old FOMOX402 still trades but this site no longer
-          routes through it. Play the live game at{' '}
+          <strong style={{ color: BANNER_FG }}>stacSOL</strong> ($STACC,
+          Token-2022, 6.9% burn per transfer). Old FOMOX402 still trades
+          but this site no longer routes through it. Play the live game at{' '}
           <a
             href="https://client.staccpad.fun"
             target="_blank"
             rel="noreferrer"
             style={{
-              color: 'var(--accent, #7BE0A4)',
+              color: BANNER_LINK,
               textDecoration: 'underline',
               textDecorationThickness: 1,
               textUnderlineOffset: 2,
@@ -302,9 +312,9 @@ function MigrationBanner() {
           }}
           aria-label="Dismiss"
           style={{
-            border: '1px solid var(--line, rgba(255,255,255,0.18))',
+            border: `1px solid ${BANNER_LINE}`,
             background: 'transparent',
-            color: 'inherit',
+            color: BANNER_FG,
             fontFamily: 'var(--f-mono)',
             fontSize: 11,
             letterSpacing: '0.04em',
