@@ -792,6 +792,160 @@ function FaqStrip() {
   )
 }
 
+function GameSection() {
+  // Editorial blurb about the game economy moving from fomox402 → stacSOL.
+  // Keeps the tone honest about the supply muckling that happened with
+  // FOMOX402 (community lost faith, liquidity went thin), and points the
+  // gameplay at the new bid currency (stacSOL = $STACC, 6K4xdfEk…).
+  // Also hints that the playable surface exists outside the browser:
+  // Solana Seeker, Google Play, App Store. We don't link the stores
+  // because the listings are mid-review — drop direct URLs when they go
+  // live and the chip on this section will light up automatically.
+  return (
+    <section className="section shell" id="game">
+      <div className="section-head">
+        <h2 className="section-h">
+          The <em>game</em> burns it back.
+        </h2>
+        <p className="section-lede">
+          stacSOL isn't just a yield instrument — it's the bid currency of a
+          live, last-player-standing game running at{' '}
+          <a
+            href="https://client.staccpad.fun"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: 'var(--accent-deep)',
+              textDecoration: 'underline',
+              textDecorationThickness: 1,
+              textUnderlineOffset: 3,
+            }}
+          >
+            client.staccpad.fun
+          </a>
+          . Every bid moves stacSOL, every stacSOL transfer burns 6.9%, and
+          the redemption rate climbs as the supply shrinks. Play the game,
+          burn the supply, the rate goes up. That's the loop.
+        </p>
+      </div>
+
+      <div
+        className="proofs"
+        style={{ marginBottom: 28 }}
+      >
+        <div className="proof">
+          <div className="proof-n">BID</div>
+          <div className="proof-text">
+            Place a stacSOL bid, become the last bidder. Hold the seat until
+            the round timer expires and you take the pot.
+          </div>
+        </div>
+        <div className="proof">
+          <div className="proof-n">BURN</div>
+          <div className="proof-text">
+            Every bid moves stacSOL on-chain. Every move pays the 6.9%
+            Token-2022 transfer fee. Every fee gets burned. The game funds
+            the deflation.
+          </div>
+        </div>
+        <div className="proof">
+          <div className="proof-n">RATE</div>
+          <div className="proof-text">
+            Fewer tokens after every round. The same SOL reserve backs a
+            smaller denominator. Everyone holding stacSOL gets paid by
+            people playing.
+          </div>
+        </div>
+      </div>
+
+      <div
+        style={{
+          borderTop: '1px solid var(--line)',
+          paddingTop: 22,
+          marginTop: 8,
+        }}
+      >
+        <p
+          style={{
+            margin: 0,
+            color: 'var(--ink-soft)',
+            fontSize: 14,
+            lineHeight: 1.7,
+            maxWidth: '64ch',
+            textWrap: 'pretty',
+          }}
+        >
+          <strong style={{ color: 'var(--ink)' }}>On the old token.</strong>{' '}
+          FOMOX402 was the first attempt at this loop. The supply got
+          muckled — community lost faith, liquidity went thin, the chart
+          told the story. FOMOX402 still trades on its own; this site no
+          longer routes through it. The game economy is now on stacSOL
+          (mint{' '}
+          <span
+            className="mono"
+            style={{
+              color: 'var(--ink-muted)',
+              fontFamily: 'var(--f-mono)',
+              fontSize: 13,
+              wordBreak: 'break-all',
+            }}
+          >
+            6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f
+          </span>
+          ), a Token-2022 mint with a 6.9% transfer fee that burns supply on
+          every bid.
+        </p>
+        <p
+          style={{
+            margin: '14px 0 0',
+            color: 'var(--ink-soft)',
+            fontSize: 14,
+            lineHeight: 1.7,
+            maxWidth: '64ch',
+            textWrap: 'pretty',
+          }}
+        >
+          <strong style={{ color: 'var(--ink)' }}>
+            stacc's ghost is in the machine.
+          </strong>{' '}
+          The loop runs whether you're watching or not — bid bots,
+          autoclaim workers, refill swaps, all stitched to the same burn.
+          You can count on stacc's ghost to keep pushing stacSOL.
+        </p>
+      </div>
+
+      <div
+        className="hero-cta-row"
+        style={{ marginTop: 28 }}
+      >
+        <a
+          className="btn btn-primary"
+          href="https://client.staccpad.fun"
+          target="_blank"
+          rel="noreferrer"
+        >
+          Play the game
+          <span className="arrow">↗</span>
+        </a>
+        <span
+          className="btn btn-ghost"
+          style={{
+            borderColor: 'var(--line-soft)',
+            color: 'var(--ink-muted)',
+            cursor: 'default',
+            fontSize: 13,
+            letterSpacing: '0.02em',
+          }}
+          aria-disabled
+          title="Solana Seeker · Google Play · Apple App Store — listings in review"
+        >
+          Seeker · Play · App Store · <em>soon</em>
+        </span>
+      </div>
+    </section>
+  )
+}
+
 function Closing() {
   return (
     <section className="closing shell">
@@ -870,6 +1024,7 @@ export default function Landing() {
         <Proofs />
         <Compare />
         <Architecture />
+        <GameSection />
         <FaqStrip />
         <Closing />
         <Footer />

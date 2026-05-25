@@ -221,6 +221,105 @@ function MobileDrawer({
   )
 }
 
+// Sticky migration banner — TL;DR of the fomox402 → stacSOL transition
+// surfaced on every page so visitors who land deep into the site (not just
+// /) see the context. Dismissal persists via localStorage so it doesn't
+// keep nagging once read. Bump BANNER_VERSION to re-show after material
+// updates.
+const BANNER_VERSION = '2026-05-25-stacsol'
+const BANNER_KEY = `stacsol_banner_dismissed_${BANNER_VERSION}`
+
+function MigrationBanner() {
+  const [dismissed, setDismissed] = useState<boolean | null>(null)
+  useEffect(() => {
+    try {
+      setDismissed(localStorage.getItem(BANNER_KEY) === '1')
+    } catch {
+      setDismissed(false)
+    }
+  }, [])
+  if (dismissed !== false) return null
+  return (
+    <div
+      role="region"
+      aria-label="stacSOL announcement"
+      style={{
+        background: 'var(--ink, #0a0a0a)',
+        color: 'var(--ivory, #f7f5ee)',
+        borderBottom: '1px solid var(--line, rgba(255,255,255,0.08))',
+        fontFamily: 'var(--f-sans)',
+        fontSize: 13,
+        lineHeight: 1.45,
+        position: 'sticky',
+        top: 0,
+        zIndex: 1000,
+      }}
+    >
+      <div
+        className="shell"
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: 16,
+          padding: '8px 0',
+          flexWrap: 'wrap',
+        }}
+      >
+        <span style={{ flex: '1 1 auto', minWidth: 220 }}>
+          <strong style={{ fontFamily: 'var(--f-display)', letterSpacing: '0.01em' }}>
+            FOMOX402 → stacSOL.
+          </strong>{' '}
+          Old supply got muckled, liquidity thinned. Game economy is now
+          on{' '}
+          <strong>stacSOL</strong> ($STACC, Token-2022, 6.9% burn per
+          transfer). Old FOMOX402 still trades but this site no longer
+          routes through it. Play the live game at{' '}
+          <a
+            href="https://client.staccpad.fun"
+            target="_blank"
+            rel="noreferrer"
+            style={{
+              color: 'var(--accent, #7BE0A4)',
+              textDecoration: 'underline',
+              textDecorationThickness: 1,
+              textUnderlineOffset: 2,
+            }}
+          >
+            client.staccpad.fun
+          </a>
+          . Seeker · Play · App Store — <em>soon</em>. stacc's ghost
+          keeps pushing.
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            try {
+              localStorage.setItem(BANNER_KEY, '1')
+            } catch {
+              /* fall through */
+            }
+            setDismissed(true)
+          }}
+          aria-label="Dismiss"
+          style={{
+            border: '1px solid var(--line, rgba(255,255,255,0.18))',
+            background: 'transparent',
+            color: 'inherit',
+            fontFamily: 'var(--f-mono)',
+            fontSize: 11,
+            letterSpacing: '0.04em',
+            padding: '4px 10px',
+            cursor: 'pointer',
+            flex: '0 0 auto',
+          }}
+        >
+          DISMISS ✕
+        </button>
+      </div>
+    </div>
+  )
+}
+
 export default function EditorialNav({
   pathname,
   ctaLabel = 'Mint stacSOL',
@@ -233,6 +332,7 @@ export default function EditorialNav({
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <>
+      <MigrationBanner />
       <nav className="nav">
         <div className="shell nav-inner">
           <a href="/" className="nav-mark">
@@ -243,9 +343,14 @@ export default function EditorialNav({
               <a
                 key={l.id}
                 href={l.id}
+                // @ts-ignore
                 target={l.external ? '_blank' : undefined}
+
+                // @ts-ignore
                 rel={l.external ? 'noreferrer' : undefined}
                 className={
+
+                // @ts-ignore
                   l.external
                     ? ''
                     : l.id === '/'
