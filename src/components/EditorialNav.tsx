@@ -221,13 +221,15 @@ function MobileDrawer({
   )
 }
 
-// Sticky migration banner — TL;DR of the fomox402 → stacSOL transition
-// surfaced on every page so visitors who land deep into the site (not just
-// /) see the context. Dismissal persists via localStorage so it doesn't
-// keep nagging once read. Bump BANNER_VERSION to re-show after material
-// updates.
-const BANNER_VERSION = '2026-05-25-stacsol'
+// Sticky validator-pointer banner — TL;DR of stacSOL's backing infra so
+// visitors can independently verify the validator is real, live, and ours.
+// Dismissal persists via localStorage; bump BANNER_VERSION to re-show after
+// material updates. The previous FOMOX402 → stacSOL migration banner shipped
+// under the '2026-05-25-stacsol' version key and is now retired.
+const BANNER_VERSION = '2026-05-27-validator'
 const BANNER_KEY = `stacsol_banner_dismissed_${BANNER_VERSION}`
+const VALIDATOR_URL =
+  'https://www.validators.app/validators/3ENj7S6zgjbkH1dLx6okTeLu6n1SPbHn4vCc2KD7r5GF?locale=en&network=mainnet'
 
 function MigrationBanner() {
   const [dismissed, setDismissed] = useState<boolean | null>(null)
@@ -252,7 +254,7 @@ function MigrationBanner() {
   return (
     <div
       role="region"
-      aria-label="stacSOL announcement"
+      aria-label="stacSOL validator announcement"
       style={{
         background: BANNER_BG,
         color: BANNER_FG,
@@ -277,15 +279,13 @@ function MigrationBanner() {
       >
         <span style={{ flex: '1 1 auto', minWidth: 220, color: BANNER_FG }}>
           <strong style={{ fontFamily: 'var(--f-display)', letterSpacing: '0.01em', color: BANNER_FG }}>
-            FOMOX402 → stacSOL.
+            stacSOL validator is live.
           </strong>{' '}
-          Old supply got muckled, liquidity thinned. Game economy is now
-          on{' '}
-          <strong style={{ color: BANNER_FG }}>stacSOL</strong> ($STACC,
-          Token-2022, 6.9% burn per transfer). Old FOMOX402 still trades
-          but this site no longer routes through it. Play the live game at{' '}
+          We run our own node on patched agave with native TowerSync vote
+          batching · 100% commission · every lamport of yield compounds into
+          NAV. Independently verify on{' '}
           <a
-            href="https://client.staccpad.fun"
+            href={VALIDATOR_URL}
             target="_blank"
             rel="noreferrer"
             style={{
@@ -295,10 +295,13 @@ function MigrationBanner() {
               textUnderlineOffset: 2,
             }}
           >
-            client.staccpad.fun
+            validators.app
           </a>
-          . Seeker · Play · App Store — <em>soon</em>. stacc's ghost
-          keeps pushing.
+          . Vote account{' '}
+          <code style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: BANNER_FG }}>
+            3ENj…r5GF
+          </code>
+          .
         </span>
         <button
           type="button"
