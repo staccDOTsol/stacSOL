@@ -32,6 +32,7 @@ const NAV_LINKS = [
   { id: '/app', label: 'App' },
   { id: '/portfolio', label: 'Portfolio' },
   { id: '/leaderboard', label: 'Leaderboard' },
+  { id: 'https://yal.fun', label: 'YAL.fun', external: true },
   { id: '/faq', label: 'FAQ' },
   { id: '/terms', label: 'Terms' },
 ]
