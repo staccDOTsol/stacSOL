@@ -283,8 +283,9 @@ function MigrationBanner() {
             stacSOL validator is live.
           </strong>{' '}
           We run our own node on patched agave with native TowerSync vote
-          batching · 100% commission · every lamport of yield compounds into
-          NAV. Independently verify on{' '}
+          batching · 100% commission, kept as operator revenue — the batching
+          is what makes a small validator pay for itself. NAV grows from the
+          6.9% burn, not the validator. Independently verify on{' '}
           <a
             href={VALIDATOR_URL}
             target="_blank"
