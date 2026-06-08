@@ -43,6 +43,8 @@ Two yield sources, both compounding into the numerator/denominator ratio:
 
 Result: NAV goes up from the burn half; the liqd half streams real SOL to your PDA. Both `mint.supply` and `pool.pool_token_supply` shrink, ratio rises monotonically. Set `LIQD_DESTINATION` empty to fall back to 100% burn (original stacSOL behavior).
 
+**Both fees are 13.8%.** The pool's **deposit (mint) fee** is also 13.8% (50% kicked to referrers, 50% to the manager). The manager's share mints into the manager-fee account — which `create-pool` sets to the manager's ATA, the same account the burn loop sweeps — so the mint-fee accrual rides the *identical* 50/50 burn + liqd-to-PDA split as the transfer fee. (The loop warns if your pool was created with a different fee account.)
+
 ---
 
 ## What's in this repo

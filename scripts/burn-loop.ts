@@ -521,6 +521,9 @@ function log(msg: string) {
   console.log(`[${t}] ${msg}`)
 }
 
+// One-shot guard so the manager-fee-account mismatch warning logs at most once.
+let warnedFeeAcct = false
+
 // ----------------------------------------------------------- tick
 async function tick() {
   const ata = deriveAta(authority.publicKey)
@@ -539,6 +542,20 @@ async function tick() {
     const r0 = await fetchPoolRefs()
     if (r0.poolTokenSupply > 0n)
       navBefore = Number(r0.poolTotalLamports) / Number(r0.poolTokenSupply)
+    // The pool's deposit fee (the "mint" fee — also 13.8% on this fork) mints
+    // stacSOL into manager_fee_account. spl-stake-pool create-pool sets that to
+    // the manager's ATA — i.e. THIS ata — so deposit-fee accrual lands in the
+    // same account we sweep and rides the identical 50/50 burn+liqd split as
+    // the transfer fee. Warn (once) if the pool was created with a different
+    // fee account, since then deposit fees would NOT be auto-split here.
+    if (!warnedFeeAcct && !r0.managerFeeAccount.equals(ata)) {
+      warnedFeeAcct = true
+      log(
+        `WARNING manager_fee_account ${r0.managerFeeAccount.toBase58()} != manager ATA — ` +
+          `deposit (mint) fees accrue there and will NOT be split by this loop. ` +
+          `Re-create the pool with the manager ATA as fee account, or sweep it manually.`,
+      )
+    }
   } catch {
     /* non-fatal */
   }
