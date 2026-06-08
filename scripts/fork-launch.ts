@@ -68,7 +68,10 @@ const EPOCH_FEE = process.env.EPOCH_FEE ?? '0/100'
 const WITHDRAWAL_FEE = process.env.WITHDRAWAL_FEE ?? '0/100'
 const DEPOSIT_FEE = process.env.DEPOSIT_FEE ?? '1380/10000'
 const REFERRAL_FEE = process.env.REFERRAL_FEE ?? '50' // % of deposit fee to referrer
-const MAX_VALIDATORS = process.env.MAX_VALIDATORS ?? '2950'
+// Sizes the validator-list account (rent ≈ 73 bytes/slot). The reserve runs
+// 100% liquid, so a small list is plenty; 32 leaves headroom for future
+// delegation without paying ~1.5 SOL of rent for a 2950-slot list.
+const MAX_VALIDATORS = process.env.MAX_VALIDATORS ?? '32'
 
 const RPC_URL = process.env.RPC_URL
 if (!RPC_URL) throw new Error('set RPC_URL')
