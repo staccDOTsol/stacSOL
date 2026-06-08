@@ -568,7 +568,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
       // Match against stacSOL mint to decide between native DepositSol and
       // Jupiter swap. Jupiter's SOL → stacSOL route locks vote-account-adjacent
       // accounts (Sanctum router) and Jito refuses to bundle that. Our own
-      // DepositSol ix is bundle-safe and avoids the 6.9% transfer fee.
+      // DepositSol ix is bundle-safe and avoids the 13.8% transfer fee.
       const isAStacsol = pool.mintA.address === STACSOL_MINT
       const isBStacsol = pool.mintB.address === STACSOL_MINT
 
@@ -625,8 +625,8 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         stepLabels.push({ label: `top up ${pool.mintA.symbol} from SOL`, state: 'running' })
         setSteps([...stepLabels])
         if (isAStacsol) {
-          // Native DepositSol path — bundle-safe, no 6.9% fee on the output.
-          // Buffer 3000bps (30%) covers Token-2022 6.9% transfer fee +
+          // Native DepositSol path — bundle-safe, no 13.8% fee on the output.
+          // Buffer 3000bps (30%) covers Token-2022 13.8% transfer fee +
           // Raydium 50% slippage tolerance + pool ratio drift.
           const stakePool = await fetchPool(connection)
           const lamportsForA = lamportsForStacsolMint(
@@ -640,7 +640,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `native DepositSol — ~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} stacSOL (no 6.9% fee)`,
+            detail: `native DepositSol — ~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} stacSOL (no 13.8% fee)`,
           })
         } else {
           // 30% buffer on swap input — slippageBps is 5000 (50%) so we
@@ -684,7 +684,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         stepLabels.push({ label: `top up ${pool.mintB.symbol} from SOL`, state: 'running' })
         setSteps([...stepLabels])
         if (isBStacsol) {
-          // 3000bps (30%) buffer — comfortably covers Token-2022 6.9% fee +
+          // 3000bps (30%) buffer — comfortably covers Token-2022 13.8% fee +
           // Raydium's now-50% slippage tolerance + pool ratio drift.
           const stakePool = await fetchPool(connection)
           const lamportsForB = lamportsForStacsolMint(
@@ -698,7 +698,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `native DepositSol — ~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} stacSOL (no 6.9% fee)`,
+            detail: `native DepositSol — ~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} stacSOL (no 13.8% fee)`,
           })
         } else {
           // Same 30% headroom rationale as the A-side path above.

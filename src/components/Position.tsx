@@ -11,7 +11,7 @@ import type { HolderRow } from '../hooks/useMyHolderRow'
 // Burn-side fee — the user effectively gets `stac × NAV × BURN_PAYOUT` SOL
 // when they hit Burn. Hoisted to the module scope so the per-tranche table
 // can use it without re-declaring.
-const BURN_PAYOUT = 0.931
+const BURN_PAYOUT = 0.862
 
 const fmtSol = (lamports: bigint) =>
   (Number(lamports) / LAMPORTS_PER_SOL).toLocaleString(undefined, {
@@ -137,16 +137,16 @@ export function Position({
   // Two close-value numbers — the headline P&L tracks the burn-net one
   // because that's the actual cash a user receives if they hit Burn right
   // now. Previously we showed mark-to-NAV (gross) which understated losses
-  // by ~6.9% and led to "huh, I thought I'd get more SOL than this" when
+  // by ~13.8% and led to "huh, I thought I'd get more SOL than this" when
   // the wallet popup quoted the real payout.
   //
   //   walletNavValue   = wallet stacSOL × NAV                     (gross)
-  //   walletBurnValue  = wallet stacSOL × NAV × 0.931             (net of burn fee)
+  //   walletBurnValue  = wallet stacSOL × NAV × 0.862             (net of burn fee)
   //   totalCloseGross  = walletNavValue  + lpExposure.totalValueInSol
   //   totalCloseBurn   = walletBurnValue + lpExposure.totalValueInSol
   //
-  // We DON'T discount LP-side value by 0.931 because LPs withdraw via
-  // Meteora/Raydium (no stake-pool burn fee on the way out). The 6.9%
+  // We DON'T discount LP-side value by 0.862 because LPs withdraw via
+  // Meteora/Raydium (no stake-pool burn fee on the way out). The 13.8%
   // only applies to wallet stacSOL going through WithdrawSol.
   const navLoading = currentRate == null
   const walletSolValue =
@@ -168,7 +168,7 @@ export function Position({
   // surfaces holder_summary.pnl_sol, which is computed in SQL from
   // indexer-tracked stacSOL holdings + transferred-out passthrough
   // adjustments + gross_sol_out − gross_sol_in. If we recompute locally
-  // here using walletBalance × NAV × 0.931 + lpExposure.totalValueInSol,
+  // here using walletBalance × NAV × 0.862 + lpExposure.totalValueInSol,
   // we'll diverge in two systematic ways:
   //   1. lpExposure includes the *paired-token side* of LP positions
   //      (e.g. FOMOX402 sitting alongside stacSOL in a Raydium CP pool).
@@ -255,7 +255,7 @@ export function Position({
                   ? ` · LPs ${fmtSolNum(lpExposure.totalValueInSol)}`
                   : ''}
                 <br />
-                gross @ NAV {fmtSolNum(totalCloseGrossSol)} (before 6.9% burn fee)
+                gross @ NAV {fmtSolNum(totalCloseGrossSol)} (before 13.8% burn fee)
               </div>
             </>
           ) : (
@@ -287,7 +287,7 @@ export function Position({
               <span className="text-xs text-[var(--color-dim)] ml-1">SOL</span>
               <div className="text-[11px] text-[var(--color-dim)] mt-1">
                 {pnlPct != null
-                  ? `${(pnlPct * 100).toFixed(2)}% vs net SOL paid (after 6.9% burn fee)`
+                  ? `${(pnlPct * 100).toFixed(2)}% vs net SOL paid (after 13.8% burn fee)`
                   : hasCostBasis
                   ? 'computing…'
                   : 'no cost basis'}
@@ -631,7 +631,7 @@ function TrancheBreakdown({
               </thead>
               <tbody>
                 {trancheBreakevens.map(({ tranche: t, breakeven }, i) => {
-                  // Per-tranche today P&L = stacOut × NAV × 0.931 - solIn
+                  // Per-tranche today P&L = stacOut × NAV × 0.862 - solIn
                   // (in SOL). Underwater iff break-even > current NAV.
                   const stacOutUi = Number(t.stacOut) / 1e9
                   const solInUi = Number(t.solIn) / LAMPORTS_PER_SOL
@@ -701,7 +701,7 @@ function TrancheBreakdown({
             /liquidity and /singlesided will show up here as &quot;mint&quot;
             rows. Break-even NAV ={' '}
             <code className="text-[var(--color-fg)]">
-              solIn / (stacOut × 0.931)
+              solIn / (stacOut × 0.862)
             </code>
             . Time-to-recoup uses the last ~24h of NAV climb from{' '}
             <code className="text-[var(--color-fg)]">/api/history</code>; epoch

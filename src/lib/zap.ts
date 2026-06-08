@@ -263,7 +263,7 @@ export async function getJupiterSwapTx(args: {
  * the Sanctum stake pool. Used as a Jupiter-swap replacement when the topup
  * target is stacSOL — Jupiter's SOL → stacSOL route goes through the Sanctum
  * router and includes accounts that Jito flags as vote-account-adjacent
- * (irrelevant for Helius Sender, but the SDK route still has the 6.9%
+ * (irrelevant for Helius Sender, but the SDK route still has the 13.8%
  * Token-2022 transfer-fee gotcha that this avoids).
  *
  * MintTo (which DepositSol uses internally) doesn't trigger TransferFee —
@@ -275,7 +275,7 @@ export async function buildStacsolMintTx(
   lamports: bigint,
   /** Optional referrer pubkey. When set, derives + idempotently creates
    *  the referrer's stacSOL ATA and routes the pool's `sol_referral_fee`
-   *  share (50% of 6.9% = ~3.45% of deposit) into it. When omitted, the
+   *  share (50% of 13.8% = ~6.9% of deposit) into it. When omitted, the
    *  referral slot defaults to the depositor's own ATA (self-rebate). */
   referrer?: PublicKey,
 ): Promise<VersionedTransaction> {
@@ -304,7 +304,7 @@ export async function buildStacsolMintTx(
 /**
  * Build a v0 transaction that burns stacSOL via WithdrawSol on the Sanctum
  * stake pool. Used as a Jupiter-swap replacement when converting stacSOL → SOL
- * after an LP withdraw — the native WithdrawSol path also avoids the 6.9%
+ * after an LP withdraw — the native WithdrawSol path also avoids the 13.8%
  * Token-2022 transfer fee that Jupiter's swap incurs.
  */
 export async function buildStacsolBurnTx(
@@ -328,12 +328,12 @@ export async function buildStacsolBurnTx(
 
 /**
  * Compute the SOL lamports needed as input to DepositSol so that the user
- * receives at least `desiredStacsolAtomic` stacSOL after the 6.9% deposit
+ * receives at least `desiredStacsolAtomic` stacSOL after the 13.8% deposit
  * fee. Includes a small buffer to absorb rate drift between build and execute.
  *
  * rate = pool.totalLamports / pool.poolTokenSupply (SOL lamports per stacSOL atom)
- * desired_post_fee = lamports_in / rate × 0.931
- * → lamports_in = desired_post_fee × rate / 0.931
+ * desired_post_fee = lamports_in / rate × 0.862
+ * → lamports_in = desired_post_fee × rate / 0.862
  */
 export function lamportsForStacsolMint(
   desiredStacsolAtomic: bigint,

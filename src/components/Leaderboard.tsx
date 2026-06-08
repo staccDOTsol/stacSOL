@@ -10,7 +10,7 @@
 // Display strategies ported from the holders leaderboard (src/Leaderboard.tsx):
 //   - WalletIdentity: anonymous pseudonym by default, opt-in doxx via signature
 //   - DoxxToggle on the connected wallet's own row
-//   - SOL-value of fee_stacsol shown alongside raw stacSOL (using NAV × 0.931
+//   - SOL-value of fee_stacsol shown alongside raw stacSOL (using NAV × 0.862
 //     because the T22 transfer fee applies on burn). The raw stacSOL number
 //     stays so referrers can see what's in their ATA right now.
 //   - Sticky "you" row with rich breakdown (rank, raw kickback, SOL value,
@@ -42,7 +42,7 @@ interface LeaderboardRow extends DoxxIdentity {
 interface LeaderboardResponse {
   marketingReferrer: string
   navRate: number | null
-  payoutFraction: number // 0.931 — net of 6.9% T22 transfer fee
+  payoutFraction: number // 0.862 — net of 13.8% T22 transfer fee
   totals: {
     deposits: number
     referrers: number
@@ -137,7 +137,7 @@ export function Leaderboard() {
   }
 
   const nav = data?.navRate ?? null
-  const payout = data?.payoutFraction ?? 0.931
+  const payout = data?.payoutFraction ?? 0.862
 
   // Totals → SOL value.
   const totalFeeStacAtom = data?.totals.feeStacsol ?? '0'
@@ -199,7 +199,7 @@ export function Leaderboard() {
         const feeSol = stacAtomToSol(feeStacAtom, nav, payout)
         const referredVolumeSol = lamportsToSol(myRow.solReferred)
         // ROI is fee value vs the volume — useful sanity check vs the
-        // theoretical 3.45% (50% of 6.9% deposit fee, paid as stacSOL).
+        // theoretical 6.9% (50% of 13.8% deposit fee, paid as stacSOL).
         const effRoi =
           feeSol != null && referredVolumeSol > 0
             ? feeSol / referredVolumeSol
@@ -230,7 +230,7 @@ export function Leaderboard() {
                 {feeSol != null && (
                   <span
                     className="text-[var(--color-green)]"
-                    title={`if you burned every stacSOL you've earned via referrals right now, you'd receive this much SOL (NAV ${nav?.toFixed(4) ?? '?'} × 0.931 payout)`}
+                    title={`if you burned every stacSOL you've earned via referrals right now, you'd receive this much SOL (NAV ${nav?.toFixed(4) ?? '?'} × 0.862 payout)`}
                   >
                     ≈ {fmtSolFloat(feeSol)} SOL @ burn
                   </span>
@@ -242,7 +242,7 @@ export function Leaderboard() {
                 {effRoi != null && (
                   <span
                     className="text-[var(--color-dim)] opacity-80"
-                    title="your fee value vs your referred volume. should be ≈ 3.45% (= 50% of the 6.9% deposit fee). lower = referees burned their fee back into NAV before you valued it."
+                    title="your fee value vs your referred volume. should be ≈ 6.9% (= 50% of the 13.8% deposit fee). lower = referees burned their fee back into NAV before you valued it."
                   >
                     ({(effRoi * 100).toFixed(2)}%)
                   </span>
@@ -299,7 +299,7 @@ export function Leaderboard() {
                 </th>
                 <th
                   className="text-right px-3 py-1.5 font-black"
-                  title="SOL value if they burned every kicked-back stacSOL right now (NAV × 0.931)"
+                  title="SOL value if they burned every kicked-back stacSOL right now (NAV × 0.862)"
                 >
                   ≈ SOL @ burn
                 </th>
@@ -372,7 +372,7 @@ export function Leaderboard() {
         to complete after the first deploy.{' '}
         <span className="text-[var(--color-ember)]">
           fee (stacSOL) is the raw kickback in the referrer&apos;s ATA;{' '}
-          ≈ SOL @ burn values it at the current NAV minus the 6.9% transfer
+          ≈ SOL @ burn values it at the current NAV minus the 13.8% transfer
           fee on burn. SOL referred is the gross funnel volume — not income.
         </span>
       </p>

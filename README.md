@@ -1,6 +1,13 @@
-# stacSOL
+# stacSOL (fork — 13.8% fee, 50/50 split)
 
-A hyper-yielding Solana LST. Built on the audited Sanctum SPL stake-pool program with a Token-2022 6.9% transfer-fee burn loop layered on top — so NAV climbs from staking yield AND from every cross-pair DEX trade. The redemption rate is mathematically monotonic up; the program has no code path that can decrease it.
+A hyper-yielding Solana LST. Built on the audited Sanctum SPL stake-pool program with a Token-2022 **13.8%** transfer-fee loop layered on top. Every harvested transfer fee is split two ways:
+
+- **half (6.9%) is burned** — shrinks supply, pushes NAV up (the stacSOL "pitch"); and
+- **half (6.9%) is redeemed to SOL at NAV** via the pool's `WithdrawSol` and sent straight to an arbitrary **liqd destination PDA** you configure.
+
+NAV still climbs from staking yield AND from the burn half of every cross-pair DEX trade. The redemption rate is mathematically monotonic up; the program has no code path that can decrease it.
+
+> **This is a clean fork.** The mint + pool addresses below are the original deployment and are placeholders until you run `scripts/fork-launch.ts` to mint a fresh 13.8%-fee Token-2022 mint and create your own Sanctum pool. Set `MINT` / `POOL` / `LIQD_DESTINATION` in your env afterward.
 
 Live: **[stacsol.app](https://stacsol.app)** · Docs: **[/faq](https://stacsol.app/faq)** · X: **[@thystaccfloweth](https://x.com/thystaccfloweth)** · TG: **[t.me/StaccPROOF](https://t.me/StaccPROOF)**
 
@@ -28,12 +35,13 @@ This repo is the **dApp + serverless API + operational scripts** for the protoco
 Two yield sources, both compounding into the numerator/denominator ratio:
 
 1. **Staking yield** — backing SOL is held in the pool reserve (currently 100% liquid; the architecture supports validator delegation but isn't using it yet, by choice).
-2. **Token-2022 transfer-fee burn loop** — every transfer of stacSOL withholds 6.9% of the moved amount. Cross-pair DEX trades, swaps, and CEX deposits all trigger transfers. The withheld portion gets harvested by `scripts/burn-loop.ts` every 5 minutes:
+2. **Token-2022 transfer-fee loop (split)** — every transfer of stacSOL withholds 13.8% of the moved amount. Cross-pair DEX trades, swaps, and CEX deposits all trigger transfers. The withheld portion gets harvested by `scripts/burn-loop.ts` every 5 minutes and **split 50/50** (`SPLIT_LIQD_BPS`, default 5000):
    - `WithdrawWithheldTokensFromAccounts` → manager ATA
-   - `BurnChecked` → drops `mint.supply`
+   - **liqd leg (6.9%):** `WithdrawSol` redeems that share to SOL at NAV with the lamports credited straight to `LIQD_DESTINATION` (your PDA)
+   - **burn leg (6.9%):** `BurnChecked` → drops `mint.supply`
    - `UpdateValidatorListBalance` + `UpdateStakePoolBalance` + `Cleanup` → reconciles `pool.pool_token_supply` with the new `mint.supply` so the rate gain materializes in redemption math immediately
 
-Result: NAV goes up. Both `mint.supply` and `pool.pool_token_supply` shrink, `pool.total_lamports` is unchanged, ratio rises monotonically.
+Result: NAV goes up from the burn half; the liqd half streams real SOL to your PDA. Both `mint.supply` and `pool.pool_token_supply` shrink, ratio rises monotonically. Set `LIQD_DESTINATION` empty to fall back to 100% burn (original stacSOL behavior).
 
 ---
 
@@ -90,6 +98,38 @@ vercel --prod       # deploy (project must be linked to Vercel first)
 The deployed site at stacsol.app is a Vercel project. `dist/` builds the SPA, `api/` runs as Node serverless functions.
 
 ---
+
+## Launching the fork
+
+Two steps. `scripts/fork-launch.ts` does step 1 and prints the exact step-2 command.
+
+```bash
+# 1. Create the 13.8%-fee Token-2022 mint (dry-run first — signs nothing):
+RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+  bun run scripts/fork-launch.ts            # review the plan
+RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+  bun run scripts/fork-launch.ts --execute  # actually create the mint
+
+# 2. Create the Sanctum stake pool over that mint (audited CLI path):
+spl-stake-pool --url "https://your-rpc/key" create-pool \
+  --mint <MINT_FROM_STEP_1> \
+  --deposit-fee-numerator 1380 --deposit-fee-denominator 10000 \
+  --referral-fee 50 --max-validators 2950
+#   → install: cargo install spl-stake-pool-cli
+
+# 3. Wire the addresses + the destination PDA, then run the split burn loop:
+RPC_URL="https://your-rpc/key" \
+  MINT=<mint> POOL=<pool> LIQD_DESTINATION=<your PDA> \
+  KEYPAIR=./launch.json \
+  bun run scripts/burn-loop.ts
+```
+
+> ⚠️ **Key hygiene.** The launch wallet controls the mint, transfer-fee, and
+> withdraw-withheld authorities — it owns the protocol. Use a **fresh** keypair
+> generated in a secure environment. Never use a key that has been pasted into
+> a chat, ticket, or log; treat any such key as already compromised. Keys are
+> read at runtime from `KEYPAIR` / `KEYPAIR_JSON` and are never committed
+> (`*.json` keypairs and `.env*` are gitignored).
 
 ## Operational scripts
 

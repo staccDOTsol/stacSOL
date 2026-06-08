@@ -231,7 +231,7 @@ function Disclaimer() {
               .
             </p>
             <p className="m-0 text-[13px] leading-relaxed text-[var(--color-fg)]">
-              stacSOL is Token-2022 with a 6.9% transfer fee. Every swap
+              stacSOL is Token-2022 with a 13.8% transfer fee. Every swap
               through the pool burns that fee on the stacSOL leg, which
               compounds against LPs over time.
             </p>

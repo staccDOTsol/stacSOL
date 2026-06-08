@@ -181,7 +181,7 @@ function MarqueeStripDark() {
   // Tight, small-cap marquee on the dark backdrop — sets the tone before
   // the WHY STAKE block. Two rows running in opposite directions adds
   // motion without being garish.
-  const items = ['6.9% burn', 'mint', 'wrap', 'deposit', 'borrow', 'loop']
+  const items = ['13.8% burn', 'mint', 'wrap', 'deposit', 'borrow', 'loop']
   return (
     <div className="bg-[var(--color-stak-bg)] text-[var(--color-stak-mint)] py-4 border-y border-[var(--color-stak-line)]">
       <Marquee
@@ -268,7 +268,7 @@ function WhyStake() {
       <div className="max-w-7xl mx-auto mt-20 grid grid-cols-1 md:grid-cols-2 gap-8 text-[var(--color-stak-fg)]/80 font-mono text-[13px] leading-relaxed">
         <p className="m-0">
           When you mint stacSOL, every single transfer in the ecosystem
-          takes a 6.9% fee. That fee gets burned — destroyed forever —
+          takes a 13.8% fee. That fee gets burned — destroyed forever —
           every 5 minutes. The result? Fewer stacSOL tokens exist over
           time, meaning your 1 stacSOL is worth more and more SOL.
         </p>
@@ -336,7 +336,7 @@ function BuiltDifferent() {
     {
       label: 'transfer fee',
       them: '0% — free to move',
-      us: '6.9% — burns forever',
+      us: '13.8% — burns forever',
     },
     {
       label: 'claim frequency',
@@ -419,14 +419,14 @@ function Stackening() {
 
         <div className="mt-16 grid grid-cols-2 lg:grid-cols-4 gap-x-6 gap-y-12">
           {/* All four numbers are protocol constants, not pool state — no
-              fetch required. The two 6.9% figures are intentional: one is
+              fetch required. The two 13.8% figures are intentional: one is
               the Token-2022 transfer fee (every send burns), the other is
               the deposit/burn fee on mint and redeem. They're the same
               percentage but two different mechanisms; both are real. */}
-          <Stat value="6.9%" label="transfer fee · burns" />
+          <Stat value="13.8%" label="transfer fee · burns" />
           <Stat value="5 min" label="burn interval" />
           <Stat value="∞" label="up only" />
-          <Stat value="6.9%" label="mint / burn fee" />
+          <Stat value="13.8%" label="mint / burn fee" />
         </div>
 
         {/* The borrow-against-it pitch. Quote-block bar on the left,

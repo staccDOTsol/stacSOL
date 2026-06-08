@@ -130,7 +130,7 @@ function hasTransferredIn(row: HolderRow): boolean {
 //
 // IMPORTANT — this used to return `pnlSol + earnedSol`. That double-counted
 // referral / manager-fee credits, because the ingester's `pnl_sol` formula
-// already values them via `total_stac_atom × NAV × 0.931` (for still-held
+// already values them via `total_stac_atom × NAV × 0.862` (for still-held
 // kickbacks) and via `gross_sol_out_lamports` (for burned kickbacks). Adding
 // `earned_sol` again inflated the headline by exactly the SOL value of
 // every referral kickback the wallet had received — making the leaderboard
@@ -196,7 +196,7 @@ const COLUMNS: ColumnSpec[] = [
     label: 'P&L SOL',
     align: 'right',
     hint:
-      'P&L in SOL: (held × 0.931 × NAV) + lifetime burn payouts − lifetime SOL paid in. This is what a wallet would actually realize if it burned right now — referral / manager-fee kickbacks are already in `held` (they were paid as stacSOL into the ATA), so they show up here without needing to be added separately.',
+      'P&L in SOL: (held × 0.862 × NAV) + lifetime burn payouts − lifetime SOL paid in. This is what a wallet would actually realize if it burned right now — referral / manager-fee kickbacks are already in `held` (they were paid as stacSOL into the ATA), so they show up here without needing to be added separately.',
   },
   {
     key: 'pnl_pct',
@@ -417,12 +417,12 @@ export default function HoldersLeaderboard() {
     const sumEarnedStac =
       Number(BigInt(meta.totals.sumEarnedAtom || '0')) / 1e9
     // Real economic state: what the protocol would pay out if every holder
-    // burned right now. burn_net_per_token = balance × (1 - 0.069) × NAV.
+    // burned right now. burn_net_per_token = balance × (1 - 0.138) × NAV.
     const rate = meta.rate ?? 0
-    const burnValueIfAllRedeem = totalStacUi * 0.931 * rate
+    const burnValueIfAllRedeem = totalStacUi * 0.862 * rate
     // Derive sumGrossOut from the identity:
     //   sumPnlSol = sumBurnNetSol + sumGrossOut − sumGrossIn
-    // where sumBurnNetSol = totalStacUi × 0.931 × rate (= burnValueIfAllRedeem).
+    // where sumBurnNetSol = totalStacUi × 0.862 × rate (= burnValueIfAllRedeem).
     // This avoids needing a new API field.
     const sumOut = meta.totals.sumPnlSol + sumIn - burnValueIfAllRedeem
     return {
@@ -497,7 +497,7 @@ export default function HoldersLeaderboard() {
             <span className="ml-0.5 cursor-help opacity-60">ⓘ</span>
           </span>
           {meta.rate != null && (
-            <span title="What the protocol would pay out IF every holder burned every stacSOL right now, at current NAV, after the 6.9% Token-2022 transfer fee. Compare to on-chain backing (Pool card on the home page) to see solvency.">
+            <span title="What the protocol would pay out IF every holder burned every stacSOL right now, at current NAV, after the 13.8% Token-2022 transfer fee. Compare to on-chain backing (Pool card on the home page) to see solvency.">
               <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
                 {stickyTotal.burnValueIfAllRedeem.toLocaleString(undefined, {
                   maximumFractionDigits: 2,
@@ -559,7 +559,7 @@ export default function HoldersLeaderboard() {
           {meta.totals.sumEarnedSol > 0 && (
             <span
               className="opacity-60"
-              title="Referral attribution: SOL value (at current NAV) of stacSOL ever credited via the 50/50 referral + manager-fee split of the 6.9% deposit fee. This is a SUBSET of the held supply, not additional value. Counting it would double-count what's already in 'burn value' above."
+              title="Referral attribution: SOL value (at current NAV) of stacSOL ever credited via the 50/50 referral + manager-fee split of the 13.8% deposit fee. This is a SUBSET of the held supply, not additional value. Counting it would double-count what's already in 'burn value' above."
             >
               <span className="font-mono normal-case tracking-normal">
                 {fmtSolFloat(meta.totals.sumEarnedSol)}
@@ -874,7 +874,7 @@ export default function HoldersLeaderboard() {
         <span className="font-mono">SP12…vhY</span>). Balances cover both
         the wallet's stacSOL ATA and its HawkFi userPda ATA. P&amp;L is{' '}
         <code className="text-[var(--color-fg)]">
-          held × NAV × 0.931 + grossOut − grossIn
+          held × NAV × 0.862 + grossOut − grossIn
         </code>{' '}
         — realized burns plus the current burn value of held stacSOL, minus
         SOL ever deposited. The percentage is ROI on{' '}
@@ -886,7 +886,7 @@ export default function HoldersLeaderboard() {
           earned
         </span>{' '}
         column is the deposit-fee leg credited to referrers / manager (50/50
-        split, 3.45% of mint output each). Wallets whose stacSOL came
+        split, 6.9% of mint output each). Wallets whose stacSOL came
         purely from earnings show a{' '}
         <span className="text-[var(--color-green)] uppercase tracking-[2px] text-[9px]">
           earned

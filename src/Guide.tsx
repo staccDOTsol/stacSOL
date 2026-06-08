@@ -3,7 +3,7 @@
 //
 // Positioning frame: stacSOL is the SOL of the thystaccfloweth — a base
 // trading asset for the family, not a passive yield product. The flywheel
-// is cross-pair volume → 6.9% transfer-fee burn → NAV climbs. Pure stakers
+// is cross-pair volume → 13.8% transfer-fee burn → NAV climbs. Pure stakers
 // dilute APR. Lead with the positioning, then mechanic, then safety guard
 // rails (13.8% worst case), then the Jupiter chart misread.
 
@@ -74,7 +74,7 @@ function Hero() {
       <div className="mt-14 grid md:grid-cols-3 gap-4 max-w-[800px] mx-auto text-left">
         <HeroStat
           tone="red"
-          big="6.9%"
+          big="13.8%"
           label="transfer-fee burn"
           sub="every trade feeds NAV"
         />
@@ -107,7 +107,7 @@ function Flywheel() {
         Most LSTs collapse to ~7% APR — pure staking yield, decay over time.
         stacSOL doesn&apos;t, because the redemption rate compounds with
         trading volume across thystaccfloweth pairs. Every transfer of stacSOL
-        withholds 6.9% via Token-2022 and burns it on a five-minute loop.
+        withholds 13.8% via Token-2022 and burns it on a five-minute loop.
         More trades, more burn, faster NAV climb.
       </p>
 
@@ -133,7 +133,7 @@ function Flywheel() {
         <ol className="mt-3 m-0 pl-0 list-none space-y-2 text-[14px] leading-relaxed text-[var(--color-fg)]">
           <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">1.</span>More stacSOL pairs on Raydium / Meteora / Orca → deeper liquidity</li>
           <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">2.</span>Deeper liquidity → tighter spreads → DEX traders route through stacSOL</li>
-          <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">3.</span>More routing → more 6.9% transfer-fee burns on every swap</li>
+          <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">3.</span>More routing → more 13.8% transfer-fee burns on every swap</li>
           <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">4.</span>More burns → NAV climbs faster → attracts more pairs</li>
           <li><span className="text-[var(--color-hot)] font-black tabular-mono mr-2">5.</span>Repeat. T-Rex eats.</li>
         </ol>
@@ -150,7 +150,7 @@ function Mechanic() {
         stacSOL is a liquid staking token built on Token-2022. Mint and burn
         on the official site redeem at NAV against the protocol pool — but
         the rate climbs from <em>everything else</em>: every transfer of
-        stacSOL withholds 6.9% and feeds the burn loop.
+        stacSOL withholds 13.8% and feeds the burn loop.
       </p>
 
       <div className="mt-12 grid md:grid-cols-3 gap-4">
@@ -169,7 +169,7 @@ function Mechanic() {
         <FeatureCard
           symbol="🔥"
           title="The burn loop"
-          body="Every Token-2022 transfer withholds 6.9%. A daemon sweeps and burns withheld balances every five minutes. Supply only goes down. NAV only goes up."
+          body="Every Token-2022 transfer withholds 13.8%. A daemon sweeps and burns withheld balances every five minutes. Supply only goes down. NAV only goes up."
           tone="red"
         />
       </div>
@@ -455,7 +455,7 @@ function Summary() {
       <div className="mt-8 max-w-[720px] space-y-4 text-[15px] leading-relaxed text-[var(--color-fg)]">
         <p>
           stacSOL is the base trading asset for the thystaccfloweth ecosystem.
-          Volume across cross-pairs feeds the 6.9% transfer-fee burn loop. The
+          Volume across cross-pairs feeds the 13.8% transfer-fee burn loop. The
           redemption rate climbs every five minutes the family is trading.
         </p>
         <p>

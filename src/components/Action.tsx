@@ -259,8 +259,8 @@ export function Action({
   const label = busy ? '…' : mode === 'mint' ? 'Mint' : 'Burn'
   const warn =
     mode === 'mint'
-      ? 'deposit fee 6.9% on chain — receive ~93.1% of the pool token equivalent. ATA created idempotently.'
-      : 'withdrawal fee 6.9% on chain — payout ≈ amount × current pool rate × 0.931. SOL returns from the reserve account; if the reserve is short, burn fails.'
+      ? 'deposit fee 13.8% on chain — receive ~86.2% of the pool token equivalent. ATA created idempotently.'
+      : 'withdrawal fee 13.8% on chain — payout ≈ amount × current pool rate × 0.862. SOL returns from the reserve account; if the reserve is short, burn fails.'
 
   const unit = mode === 'mint' ? 'SOL' : 'stacSOL'
   const balanceLabel =
@@ -282,16 +282,16 @@ export function Action({
   // Burn just enough wallet stacSOL to extract the profit (mark-to-NAV gain
   // above net-SOL-paid), keep the rest as "principal" still earning. Math:
   //
-  //   keepStac = costSol / (rate × 0.931)   ← stac needed to back principal
+  //   keepStac = costSol / (rate × 0.862)   ← stac needed to back principal
   //   burnStac = walletBalance − keepStac   ← what to burn now
-  //   payout  = burnStac × rate × 0.931    ← SOL the user receives
+  //   payout  = burnStac × rate × 0.862    ← SOL the user receives
   //
   // Gated on:
   //   • burn mode
   //   • pool loaded (need NAV)
   //   • position has a wallet balance > 0
   //   • position has cost basis (real on-site mints, not just transfers in)
-  //   • currently profitable on a partial burn (rate × 0.931 > cost/balance)
+  //   • currently profitable on a partial burn (rate × 0.862 > cost/balance)
   //
   // The button just FILLS the input box — user still hits the main "Burn"
   // to actually sign. No surprise sends.
@@ -301,7 +301,7 @@ export function Action({
     if (!position || position.balance <= 0n) return null
     const rate =
       Number(pool.poolTotalLamports) / Number(pool.poolTokenSupplyAccounting)
-    const burnPayoutFraction = 0.931
+    const burnPayoutFraction = 0.862
     const cost =
       position.totalSolIn > position.totalSolOut
         ? Number(position.totalSolIn - position.totalSolOut) / LAMPORTS_PER_SOL

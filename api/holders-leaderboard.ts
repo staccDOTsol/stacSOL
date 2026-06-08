@@ -258,7 +258,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Totals across the *filtered* set.
     //
     // IMPORTANT — `pnl_sol` already values referral / manager-fee kickbacks
-    // through `total_stac_atom × NAV × 0.931` (held kickbacks) and
+    // through `total_stac_atom × NAV × 0.862` (held kickbacks) and
     // `gross_sol_out_lamports` (burned kickbacks). The previous design
     // exposed `sum_pnl_adj = SUM(pnl_sol + earned_sol)` and a profitable/
     // underwater count based on the same `pnl_sol + earned_sol` predicate —

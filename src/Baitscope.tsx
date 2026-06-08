@@ -410,7 +410,7 @@ function AttributionCard({ feed }: { feed: FeedResponse | null }) {
             </p>
           )}
           <p className="m-0 mt-2 text-[10px] text-[var(--color-dim,#888)] leading-[1.5]">
-            6.9% Token-2022 fee withholds on every stacSOL transfer. We sweep
+            13.8% Token-2022 fee withholds on every stacSOL transfer. We sweep
             it, burn the excess (NAV fuel), recover the bait cost from the
             rest. Anything beyond what our bait could produce came from
             third-party LP arbing — that's pure profit for redeemers.
@@ -629,20 +629,20 @@ function VenueRollupCard({ feed }: { feed: FeedResponse | null }) {
 }
 
 // Bankrun simulator. Per-withdraw math:
-//   user redeems X stacSOL → 6.9% T22 withhold, WithdrawSol burns the
-//   spendable 0.931·X and pays out 0.931·X·rate SOL. The withheld 0.069·X
+//   user redeems X stacSOL → 13.8% T22 withhold, WithdrawSol burns the
+//   spendable 0.862·X and pays out 0.862·X·rate SOL. The withheld 0.138·X
 //   sweeps and burns later. Total supply destroyed: X. Backing dropped:
-//   0.931·X·rate.
+//   0.862·X·rate.
 //
 // Let f = X / S (fraction of supply redeemed). Then:
-//   new_rate / rate = (1 - 0.931·f) / (1 - f)
+//   new_rate / rate = (1 - 0.862·f) / (1 - f)
 //
 // The curve is gentle in the middle and explodes at the tail — last
 // hodlers eat a disproportionate share of locked SOL. This panel
 // visualises it so you can shill "every exit pumps the survivors".
 function bankrunRateMultiplier(f: number): number {
   if (f >= 1) return Number.POSITIVE_INFINITY
-  return (1 - 0.931 * f) / (1 - f)
+  return (1 - 0.862 * f) / (1 - f)
 }
 
 function BankrunCard({ feed }: { feed: FeedResponse | null }) {
@@ -677,19 +677,19 @@ function BankrunCard({ feed }: { feed: FeedResponse | null }) {
     }
   }, [baseRate, sliderPct])
 
-  // "If I mint right now" break-even. The 6.9% T22 fee withholds on the
-  // mint output, so paying X SOL nets X/NAV * 0.931 spendable stacSOL.
-  // Break-even rate = NAV / 0.931. Solving the bankrun curve for that:
-  //   (1 - 0.931·f) / (1 - f) = 1/0.931  →  f ≈ 0.5184
+  // "If I mint right now" break-even. The 13.8% T22 fee withholds on the
+  // mint output, so paying X SOL nets X/NAV * 0.862 spendable stacSOL.
+  // Break-even rate = NAV / 0.862. Solving the bankrun curve for that:
+  //   (1 - 0.862·f) / (1 - f) = 1/0.862  →  f ≈ 0.5184
   // i.e. once more than ~52% of supply rage-quits, a fresh mint today is
   // already in profit even with zero staking yield.
-  const mintBreakEvenRate = baseRate != null ? baseRate / 0.931 : null
+  const mintBreakEvenRate = baseRate != null ? baseRate / 0.862 : null
   const mintBreakEvenFraction = 0.5184
 
   return (
     <Card title="Bankrun timeline · price only goes up">
       <p className="m-0 mb-3 text-[11px] text-[var(--color-ember)] leading-[1.55]">
-        Every WithdrawSol leaks 6.9% Token-2022 fee back to the pool. So a
+        Every WithdrawSol leaks 13.8% Token-2022 fee back to the pool. So a
         bankrun doesn't crash the redemption rate — it{' '}
         <span className="font-black text-[var(--color-hot)]">accelerates</span>{' '}
         it. The last hodler always wins.
@@ -765,7 +765,7 @@ function BankrunCard({ feed }: { feed: FeedResponse | null }) {
               <span className="font-black text-[var(--color-good,#22ee88)]">
                 {mintBreakEvenRate ? mintBreakEvenRate.toFixed(4) : '—'}
               </span>{' '}
-              SOL/stacSOL (your cost basis after the 6.9% mint tax). Any
+              SOL/stacSOL (your cost basis after the 13.8% mint tax). Any
               redemption volume past{' '}
               <span className="font-black text-[var(--color-good,#22ee88)]">
                 {(mintBreakEvenFraction * 100).toFixed(1)}%
@@ -776,8 +776,8 @@ function BankrunCard({ feed }: { feed: FeedResponse | null }) {
           </div>
 
           <p className="m-0 mt-3 text-[10px] text-[var(--color-dim,#888)] leading-[1.5]">
-            Math: <code>new_rate / current = (1 − 0.931·f) / (1 − f)</code>. The
-            6.9% retention is purely the T22 withhold-on-transfer that
+            Math: <code>new_rate / current = (1 − 0.862·f) / (1 − f)</code>. The
+            13.8% retention is purely the T22 withhold-on-transfer that
             burn-loop later sweeps into the pool.
           </p>
         </div>

@@ -8,8 +8,8 @@ import { ensureSchema, getPool } from './_db.js'
 //   • per-minute aggregated series for the last `windowMin` minutes
 //   • per-venue rollup over the window
 //   • derived volume + yield attribution:
-//       transferVolumeStac   = sum(harvested_atom) / 0.069
-//       transferVolumeStacFromBait = our_bait_size_total × 2 × 0.069  (rough)
+//       transferVolumeStac   = sum(harvested_atom) / 0.138
+//       transferVolumeStacFromBait = our_bait_size_total × 2 × 0.138  (rough)
 //       arbTransferVolumeStac      = max(0, total - bait)
 //       arbBurnSol           = arb_share × burned_atom × nav
 //       baitBurnSol          = bait_share × burned_atom × nav
@@ -21,7 +21,7 @@ import { ensureSchema, getPool } from './_db.js'
 //   baitLimit (default 100, max 500)
 //   burnLimit (default 50, max 200)
 
-const T22_FEE_RATE = 0.069
+const T22_FEE_RATE = 0.138
 const LAMPORTS_PER_SOL = 1_000_000_000
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -118,7 +118,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Derive volume + attribution.
     //
     // Total stacSOL volume through transfer-fee accounts in window:
-    //   volume_atoms = sum(harvested_atom) / 0.069
+    //   volume_atoms = sum(harvested_atom) / 0.138
     //
     // Our bait-attributable share of that volume:
     //   mint_sell: 1 stacSOL transfer hits a non-manager ATA (sell leg

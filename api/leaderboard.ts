@@ -3,10 +3,10 @@ import { ensureSchema, getPool } from './_db.js'
 
 const MARKETING_REFERRER = 'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j'
 
-// 6.9% Token-2022 transfer fee on stacSOL. When converting stacSOL atoms
+// 13.8% Token-2022 transfer fee on stacSOL. When converting stacSOL atoms
 // to "realizable SOL", we apply (1 - fee) to the NAV — that's what a holder
 // would actually receive on burn (the transfer fee is withheld + burned).
-const STAC_TRANSFER_FEE_BPS = 690
+const STAC_TRANSFER_FEE_BPS = 1380
 const STAC_PAYOUT_FRACTION = (10_000 - STAC_TRANSFER_FEE_BPS) / 10_000
 
 async function fetchLatestNav(): Promise<number | null> {
@@ -78,7 +78,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     res.status(200).json({
       marketingReferrer: MARKETING_REFERRER,
       navRate, // SOL per stacSOL, used client-side to value fee_stacsol
-      payoutFraction: STAC_PAYOUT_FRACTION, // 0.931 — captures the 6.9% T22 fee
+      payoutFraction: STAC_PAYOUT_FRACTION, // 0.862 — captures the 13.8% T22 fee
       totals: {
         deposits: totals.rows[0]?.total_deposits ?? 0,
         referrers: totals.rows[0]?.total_referrers ?? 0,

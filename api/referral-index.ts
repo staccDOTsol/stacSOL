@@ -133,7 +133,7 @@ function extractCredits(sig: string, tx: ParsedTransactionRpc): ReferralRow[] {
   // carrying the WHOLE tx delta as that one ix's fee_stacsol, and (b)
   // dropped the remaining N-1 ixs at the PK conflict. Net effect was
   // fee_stacsol × N, sol_lamports × (1/N), apparent ROI inflated to N²×
-  // the real 3.45% ratio on the referrers leaderboard.
+  // the real 6.9% ratio on the referrers leaderboard.
   const lampsByReferrerAta = new Map<string, bigint>()
   const lampsByManagerAta = new Map<string, bigint>()
   for (const ix of candidates) {

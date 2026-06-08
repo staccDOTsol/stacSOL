@@ -238,7 +238,7 @@ export default function Liqmonsta() {
           Number(stacPool.poolTokenSupplyAccounting)
         : 1
     const expectedStacAtom = BigInt(
-      Math.floor((Number(lamportsToDeposit) * 0.931) / navNow),
+      Math.floor((Number(lamportsToDeposit) * 0.862) / navNow),
     )
 
     // 4. Build open txs.
@@ -377,7 +377,7 @@ function Hero() {
         One click. Every SOL-paired LP you own — DLMM, CPMM, CLMM, Whirlpools,
         DAMM — closed, the SOL minted into stacSOL, reopened on a mirrored
         stacSOL pair at the equivalent price. Same range, same exposure. Every
-        swap on the new LP feeds the 6.9% transfer-fee burn.
+        swap on the new LP feeds the 13.8% transfer-fee burn.
       </p>
     </section>
   )

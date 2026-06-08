@@ -60,7 +60,7 @@ export function deriveWrapAtas(owner: PublicKey) {
  * Wrap `amount` (raw u64, 9 decimals) stacSOL → wstacSOL.
  *
  * The wrapper uses vault-balance-delta accounting, so the actual wstacSOL
- * minted equals `amount × (1 − 690 bps)` — i.e. the net amount that arrives
+ * minted equals `amount × (1 − 1380 bps)` — i.e. the net amount that arrives
  * in the vault after the underlying's transfer fee is withheld. The user
  * supplies the gross; the program mints the net.
  *
@@ -93,8 +93,8 @@ export function ixWrap(user: PublicKey, amount: bigint): TransactionInstruction 
  * Unwrap `amount` (raw u64) wstacSOL → stacSOL.
  *
  * Burns `amount` wstacSOL, then transfers `amount` underlying out of the
- * vault. The underlying's 690-bps transfer fee applies to that vault → user
- * leg, so the user actually receives `amount × (1 − 690 bps)` stacSOL.
+ * vault. The underlying's 1380-bps transfer fee applies to that vault → user
+ * leg, so the user actually receives `amount × (1 − 1380 bps)` stacSOL.
  *
  * Same account order as wrap — only the init_if_needed semantics differ
  * (program-side), which doesn't affect the client.

@@ -70,7 +70,7 @@ export function ixCreateAtaIdempotent(
 //
 // Account slot 6 is the referral stacSOL ATA. Whoever owns that ATA collects
 // the pool's `sol_referral_fee` share of the deposit fee (currently 50% of
-// the 6.9% deposit fee = ~3.45% of the deposit amount). When `referralAta`
+// the 13.8% deposit fee = ~6.9% of the deposit amount). When `referralAta`
 // is omitted we fall back to the depositor's own ATA — the fee then comes
 // straight back to the user (effectively a self-rebate).
 //
