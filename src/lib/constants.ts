@@ -8,10 +8,12 @@ export const ATA_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsL
 
 export const DECIMALS = 9
 
+// Hardcoded on purpose: a stale VITE_RPC_URL in the deploy environment was
+// baking a dead provider into production bundles. ?rpc= stays as an escape
+// hatch for local debugging.
 const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.location.search)
 export const RPC_URL =
   params.get('rpc') ||
-  (import.meta.env.VITE_RPC_URL as string | undefined) ||
   'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 
 // Solana mainnet nominal staking yield used as the gross-APR base for the
