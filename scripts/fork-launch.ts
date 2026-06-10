@@ -26,11 +26,11 @@
  * pasted into a chat / log is compromised and must not control a real mint.
  *
  *   # dry-run (default — prints the plan, signs nothing):
- *   RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" KEYPAIR=./launch.json \
  *     bun run scripts/fork-launch.ts
  *
  *   # execute (creates the mint on mainnet):
- *   RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" KEYPAIR=./launch.json \
  *     bun run scripts/fork-launch.ts --execute
  */
 
@@ -73,8 +73,9 @@ const REFERRAL_FEE = process.env.REFERRAL_FEE ?? '50' // % of deposit fee to ref
 // delegation without paying ~1.5 SOL of rent for a 2950-slot list.
 const MAX_VALIDATORS = process.env.MAX_VALIDATORS ?? '32'
 
-const RPC_URL = process.env.RPC_URL
-if (!RPC_URL) throw new Error('set RPC_URL')
+const RPC_URL =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 
 const EXECUTE = process.argv.includes('--execute')
 

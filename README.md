@@ -107,20 +107,20 @@ Two steps. `scripts/fork-launch.ts` does step 1 and prints the exact step-2 comm
 
 ```bash
 # 1. Create the 13.8%-fee Token-2022 mint (dry-run first — signs nothing):
-RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" KEYPAIR=./launch.json \
   bun run scripts/fork-launch.ts            # review the plan
-RPC_URL="https://your-rpc/key" KEYPAIR=./launch.json \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" KEYPAIR=./launch.json \
   bun run scripts/fork-launch.ts --execute  # actually create the mint
 
 # 2. Create the Sanctum stake pool over that mint (audited CLI path):
-spl-stake-pool --url "https://your-rpc/key" create-pool \
+spl-stake-pool --url "https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" create-pool \
   --mint <MINT_FROM_STEP_1> \
   --deposit-fee-numerator 1380 --deposit-fee-denominator 10000 \
   --referral-fee 50 --max-validators 2950
 #   → install: cargo install spl-stake-pool-cli
 
 # 3. Wire the addresses + the destination PDA, then run the split burn loop:
-RPC_URL="https://your-rpc/key" \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
   MINT=<mint> POOL=<pool> LIQD_DESTINATION=<your PDA> \
   KEYPAIR=./launch.json \
   bun run scripts/burn-loop.ts
