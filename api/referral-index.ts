@@ -308,7 +308,7 @@ async function processBatch(
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema()
-    const endpoint = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
+    const endpoint = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
     const cursor = await loadCursor()
     let inserted = 0
     let scanned = 0

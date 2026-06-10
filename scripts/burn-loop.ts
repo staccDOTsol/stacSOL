@@ -23,7 +23,7 @@
  * destination ATA).
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key"      \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
  *   MINT=<fork mint>  POOL=<fork pool>  \
  *   LIQD_DESTINATION=<your PDA>         \
  *   KEYPAIR=./manager.json              \
@@ -82,12 +82,9 @@ const MIN_CLAIM = BigInt(Math.floor(MIN_CLAIM_TOKENS * 10 ** DECIMALS))
 const TICK_MS = Number(process.env.BURN_LOOP_TICK_MS ?? 5 * 60 * 1000)
 const CHUNK = 20 // source accounts per WithdrawWithheld tx
 
-const RPC_URL = process.env.RPC_URL
-if (!RPC_URL) {
-  throw new Error(
-    'set RPC_URL env var (any Solana mainnet RPC with reasonable rate limits)',
-  )
-}
+const RPC_URL =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 
 // /api/manager-state — base URL + shared secret for the optional burn-tick
 // telemetry feed. If unset, reporting silently no-ops.

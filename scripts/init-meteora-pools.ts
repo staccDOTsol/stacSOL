@@ -163,7 +163,7 @@ async function poolExists(
 
 async function main() {
   const execute = process.argv.includes('--execute')
-  const rpc = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
+  const rpc = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
   const jupKey = process.env.JUPITER_API_KEY
   if (!jupKey) {
     console.error('JUPITER_API_KEY not set — needed to quote initial pair prices')

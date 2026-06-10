@@ -150,15 +150,15 @@ Examples:
 
 ```bash
 # Live numbers (rate, supply, realized APR, etc.)
-RPC_URL="https://your-rpc/key" \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
   pnpm dlx tsx scripts/live-numbers.ts
 
 # Position dump for a wallet
-RPC_URL="https://your-rpc/key" \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
   pnpm dlx tsx scripts/investigate-user.ts <wallet-pubkey>
 
 # Burn loop (long-running; use a supervisor)
-RPC_URL="https://your-rpc/key" \
+RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
   KEYPAIR=./manager-keypair.json \
   pnpm dlx tsx scripts/burn-loop.ts
 ```

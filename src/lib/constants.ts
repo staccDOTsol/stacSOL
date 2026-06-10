@@ -33,7 +33,7 @@ const params = new URLSearchParams(typeof window === 'undefined' ? '' : window.l
 export const RPC_URL =
   params.get('rpc') ||
   (import.meta.env.VITE_RPC_URL as string | undefined) ||
-  'https://api.mainnet-beta.solana.com'
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 
 // Solana mainnet nominal staking yield used as the gross-APR base for the
 // guesstimate. Real yield drifts with inflation schedule + validator perf.
