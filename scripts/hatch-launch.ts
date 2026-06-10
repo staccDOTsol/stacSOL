@@ -29,9 +29,11 @@ const KEYPAIR_PATH =
   process.env.HATCH_LAUNCHER_KEYPAIR ??
   `${homedir()}/.config/stacsol/hatch-launcher.json`
 
-const RPC_URL =
-  process.env.RPC_URL ??
-  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+const RPC_URL = process.env.RPC_URL
+if (!RPC_URL) {
+  console.error('RPC_URL env var required')
+  process.exit(1)
+}
 
 const FEE_RATE = (process.env.HATCH_FEE_RATE ?? '1.00') as '1.00' | '2.00' | '5.00'
 const LAUNCH_MODE = (process.env.HATCH_LAUNCH_MODE ?? 'normal').toLowerCase()

@@ -12,7 +12,9 @@
 
 import { useEffect, useMemo, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
-import { WalletMultiButton } from '@solana/wallet-adapter-react-ui'
+import { useWalletModal } from '@solana/wallet-adapter-react-ui'
+import EditorialNav from './components/EditorialNav'
+import WalletPill from './components/WalletPill'
 import { LAMPORTS_PER_SOL, PublicKey, VersionedTransaction } from '@solana/web3.js'
 import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
@@ -84,8 +86,18 @@ export default function Portfolio() {
     }
   }, [])
 
+  // Editorial palette opt-in. The page's internal Tailwind utilities reference
+  // --color-bg, --color-hot, etc. — those vars get remapped onto the
+  // ivory/jade tokens by the body[data-design="editorial"] block in
+  // index.css, so the existing markup recolors automatically.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
+
   const { connection } = useConnection()
   const { publicKey, signAllTransactions } = useWallet()
+  const walletModal = useWalletModal()
 
   const [dlmmLoading, setDlmmLoading] = useState(false)
   const [dlmmPositions, setDlmmPositions] = useState<DlmmPosition[]>([])
@@ -276,15 +288,60 @@ export default function Portfolio() {
 
   return (
     <div className="min-h-screen text-[var(--color-fg)]">
-      <Nav />
+      <EditorialNav pathname="/portfolio" ctaSlot={<WalletPill />} />
       <Hero aggregate={aggregate} dlmmCount={dlmmPositions.length} cpmmCount={cpmmPositions.length} />
 
       <section className="max-w-[1080px] mx-auto px-6 pb-10">
         {!publicKey && (
-          <div className="rounded-lg bg-[var(--color-bg2)] border border-[rgb(255_34_0_/_0.22)] p-6 text-center">
-            <p className="m-0 text-[14px] text-[var(--color-dim)]">
-              Connect your wallet to load positions.
+          <div
+            className="rounded-2xl p-10 text-center"
+            style={{
+              background: 'var(--bg-elev)',
+              border: '1px solid var(--line)',
+              marginTop: 24,
+            }}
+          >
+            <div
+              className="serif"
+              style={{
+                fontSize: 'clamp(28px, 4vw, 40px)',
+                lineHeight: 1.1,
+                letterSpacing: '-0.02em',
+                color: 'var(--ink)',
+                marginBottom: 12,
+              }}
+            >
+              Connect to see your positions.
+            </div>
+            <p
+              style={{
+                margin: '0 auto 24px',
+                maxWidth: '52ch',
+                color: 'var(--ink-soft)',
+                fontSize: 15,
+                lineHeight: 1.6,
+              }}
+            >
+              Your DLMM (single-sided) and CPMM (balanced) liquidity
+              positions, claimable fees, and breakdowns load directly from
+              chain after connect — nothing stored server-side.
             </p>
+            <button
+              className="nav-cta"
+              onClick={() => walletModal.setVisible(true)}
+              style={{
+                background: 'var(--accent-deep)',
+                color: 'var(--bg)',
+                padding: '12px 22px',
+                fontSize: 13,
+              }}
+            >
+              <span className="pulse" />
+              Connect wallet
+              <span style={{ marginLeft: 2 }} aria-hidden>
+                →
+              </span>
+            </button>
           </div>
         )}
 
@@ -315,39 +372,7 @@ export default function Portfolio() {
 }
 
 /* ============================== chrome ============================== */
-
-function Nav() {
-  return (
-    <div className="sticky top-0 z-20 bg-[rgba(8,2,3,0.85)] backdrop-blur border-b border-[rgb(255_34_0_/_0.15)]">
-      <div className="max-w-[1080px] mx-auto px-6 py-3 flex items-center justify-between">
-        <a
-          href="/"
-          className="text-[11px] font-black uppercase tracking-[3px] text-[var(--color-hot)] no-underline [text-shadow:0_0_8px_rgba(255,34,0,0.5)]"
-        >
-          ← stacsol.app
-        </a>
-        <div className="flex items-center gap-3">
-          <a
-            href="/singlesided"
-            className="text-[10px] font-black uppercase tracking-[3px] text-[var(--color-dim)] hover:text-[var(--color-hot)] no-underline"
-          >
-            singlesided
-          </a>
-          <a
-            href="/liquidity"
-            className="text-[10px] font-black uppercase tracking-[3px] text-[var(--color-dim)] hover:text-[var(--color-hot)] no-underline"
-          >
-            liquidity
-          </a>
-          <span className="text-[10px] font-black uppercase tracking-[3px] text-[var(--color-fg)]">
-            portfolio
-          </span>
-          <WalletMultiButton />
-        </div>
-      </div>
-    </div>
-  )
-}
+// Legacy Nav() replaced by the shared EditorialNav in components/.
 
 function Hero({
   aggregate,

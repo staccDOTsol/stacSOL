@@ -231,7 +231,7 @@ function Disclaimer() {
               .
             </p>
             <p className="m-0 text-[13px] leading-relaxed text-[var(--color-fg)]">
-              stacSOL is Token-2022 with a 13.8% transfer fee. Every swap
+              stacSOL is Token-2022 with a 6.9% transfer fee. Every swap
               through the pool burns that fee on the stacSOL leg, which
               compounds against LPs over time.
             </p>
@@ -975,8 +975,15 @@ function DepositPanel({
                   const max = depositBalance > reserve ? depositBalance - reserve : 0n
                   setTokenAmount((Number(max) / LAMPORTS_PER_SOL).toFixed(4))
                 } else {
-                  const ui = Number(depositBalance) / Math.pow(10, plan.depositMintDecimals)
-                  setTokenAmount(ui.toFixed(Math.min(6, plan.depositMintDecimals)))
+                  // Non-WSOL max: subtract 1 atom and render at FULL
+                  // mint precision (not 6 dp) so the downstream submit's
+                  // float→bigint re-parse can't round back up past actual
+                  // on-chain balance. The SPL token program refuses any
+                  // Transfer that exceeds balance by even one atom with
+                  // InsufficientFunds.
+                  const atoms = depositBalance - 1n
+                  const ui = Number(atoms) / Math.pow(10, plan.depositMintDecimals)
+                  setTokenAmount(ui.toFixed(plan.depositMintDecimals))
                 }
               }}
               className="text-[10px] uppercase tracking-wider text-[var(--color-hot)] hover:text-[var(--color-ember)] font-black"

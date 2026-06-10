@@ -1,10 +1,10 @@
 // Stacc-ui referrer plumbing.
 //
-// The Sanctum stake pool charges a 13.8% deposit fee on SOL → stacSOL. The
+// The Sanctum stake pool charges a 6.9% deposit fee on SOL → stacSOL. The
 // pool config splits that fee with a referrer:
 //
-//     manager      = 50%   (6.9% of deposit, kept by stacc)
-//     referrer     = 50%   (6.9% of deposit, paid into a stacSOL ATA the
+//     manager      = 50%   (3.45% of deposit, kept by stacc)
+//     referrer     = 50%   (3.45% of deposit, paid into a stacSOL ATA the
 //                            depositor designates)
 //
 // The referrer ATA is one of the accounts in the DepositSol ix; whoever's
@@ -45,14 +45,14 @@ import { MINT, TOKEN_2022 } from './constants'
 const STORAGE_KEY = 'stacc-ui:referrer'
 const URL_PARAM = 'ref'
 
-/** Default referrer — collects the 50% referral share of the 13.8% deposit
+/** Default referrer — collects the 50% referral share of the 6.9% deposit
  *  fee on every mint without a `?ref=` link. Currently routed to the pool
  *  manager wallet so the referral revenue flows back into the bait-loop's
  *  operating budget (the manager wallet is what funds bait + collects
  *  recovery via WithdrawSol). Treated as the SOURCE OF TRUTH for "default
  *  referrer" — update here when rotating. */
 export const MARKETING_REFERRER = new PublicKey(
-  'WzMaL78srutrF6CsxEkWuhMaDF5HZA6jNRaEPengqpb',
+  'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j',
 )
 
 /** Validate a base58 string as a Solana PublicKey. We deliberately accept

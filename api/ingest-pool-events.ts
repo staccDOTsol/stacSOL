@@ -189,7 +189,7 @@ function extractEvents(
       //   accounts[4] = dest_user_ata  (user portion)
       //   accounts[5] = manager_fee_ata (manager keep)
       //   accounts[6] = referrer_ata    (referrer fee)
-      // With the configured 13.8% deposit fee + 50/50 referral split, the
+      // With the configured 6.9% deposit fee + 50/50 referral split, the
       // manager_keep == referrer_fee. When the dest ATA is also the
       // referrer ATA (self-referral) or the manager fee ATA (depositor
       // is the manager), the postTokenBalance delta on accounts[4]
@@ -596,7 +596,7 @@ async function rebuildTransferDeltas(): Promise<number> {
 
 async function recomputeNavSnapshot(rate: number): Promise<number> {
   // P&L treats `transferred_out` as an implicit burn at current NAV
-  // (×0.862 because the Token-2022 transfer fee applies on outgoing
+  // (×0.931 because the Token-2022 transfer fee applies on outgoing
   // transfers too) and treats `transferred_in` as an implicit
   // free-earned credit (the recipient paid 0 SOL on-chain).
   //
@@ -617,17 +617,17 @@ async function recomputeNavSnapshot(rate: number): Promise<number> {
   const sql = `
     UPDATE holder_summary
     SET
-      burn_net_sol = ((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.862,
-      transferred_out_sol = ((transferred_out_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.862,
-      transferred_in_sol  = ((transferred_in_atom::DOUBLE PRECISION)  / 1e9) * $1 * 0.862,
-      pnl_sol = (((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.862)
-                + ((GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0)::DOUBLE PRECISION) / 1e9 * $1 * 0.862)
+      burn_net_sol = ((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.931,
+      transferred_out_sol = ((transferred_out_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.931,
+      transferred_in_sol  = ((transferred_in_atom::DOUBLE PRECISION)  / 1e9) * $1 * 0.931,
+      pnl_sol = (((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.931)
+                + ((GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0)::DOUBLE PRECISION) / 1e9 * $1 * 0.931)
                 + ((gross_sol_out_lamports::DOUBLE PRECISION) / 1e9)
                 - ((gross_sol_in_lamports::DOUBLE PRECISION) / 1e9),
       pnl_pct = CASE
                   WHEN gross_sol_in_lamports > 0
-                  THEN ((((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.862)
-                        + ((GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0)::DOUBLE PRECISION) / 1e9 * $1 * 0.862)
+                  THEN ((((total_stac_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.931)
+                        + ((GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0)::DOUBLE PRECISION) / 1e9 * $1 * 0.931)
                         + ((gross_sol_out_lamports::DOUBLE PRECISION) / 1e9)
                         - ((gross_sol_in_lamports::DOUBLE PRECISION) / 1e9))
                        / ((gross_sol_in_lamports::DOUBLE PRECISION) / 1e9)
@@ -637,12 +637,12 @@ async function recomputeNavSnapshot(rate: number): Promise<number> {
                         WHEN (total_stac_atom + GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0)) > 0
                           AND gross_sol_in_lamports > gross_sol_out_lamports
                         THEN (((gross_sol_in_lamports - gross_sol_out_lamports)::DOUBLE PRECISION) / 1e9)
-                             / ((((total_stac_atom + GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0))::DOUBLE PRECISION) / 1e9) * 0.862)
+                             / ((((total_stac_atom + GREATEST(transferred_out_atom - referral_earned_atom - manager_fee_earned_atom, 0))::DOUBLE PRECISION) / 1e9) * 0.931)
                         ELSE NULL
                       END,
       earned_sol = (((referral_earned_atom + manager_fee_earned_atom)::DOUBLE PRECISION) / 1e9)
-                   * $1 * 0.862
-                   + ((transferred_in_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.862,
+                   * $1 * 0.931
+                   + ((transferred_in_atom::DOUBLE PRECISION) / 1e9) * $1 * 0.931,
       updated_at = NOW()
   `
   const r = await getPool().query(sql, [rate])
@@ -671,7 +671,7 @@ async function listAllHolders(): Promise<string[]> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema()
-    const endpoint = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+    const endpoint = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
 
     const cursor = await loadCursor()
     let inserted = 0

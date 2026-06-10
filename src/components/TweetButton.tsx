@@ -16,7 +16,7 @@ import { useReferrer } from '../lib/referrer'
  *
  * If the user has a wallet connected, every shared URL is auto-tagged
  * with their personal `?ref=<pubkey>` link. Anyone who lands on the
- * site through that tweet pays 6.9% of their mint into the connected
+ * site through that tweet pays 3.45% of their mint into the connected
  * wallet's stacSOL ATA. No extra step — tweeting IS referring.
  */
 export function TweetButton({
@@ -42,7 +42,7 @@ export function TweetButton({
   // Compact tagline — 31 weighted chars (↑ counts as 2). Keeps room under
   // X's 280-cap when added to either the pool or position template.
   const refTagline = usingPersonalRef
-    ? '↑ 6.9% kicked back via my link'
+    ? '↑ 3.45% kicked back via my link'
     : null
 
   const rate =
@@ -61,7 +61,7 @@ export function TweetButton({
   // tagline attached. CA pubkey alone is 44 chars so we drop it from the
   // body — the URL goes to the dapp, which surfaces CA prominently.
   const poolLines: string[] = []
-  poolLines.push('🔥 $stacSOL — NAV-only LST · 13.8% in/out')
+  poolLines.push('🔥 $stacSOL — NAV-only LST · 6.9% in/out')
   poolLines.push('')
   poolLines.push(
     apr != null
@@ -69,7 +69,7 @@ export function TweetButton({
       : `rate ${rate.toFixed(4)} · ~${(GROSS_APR * 100).toFixed(0)}% floor + burn`,
   )
   poolLines.push(
-    'every cross-pair trade burns 13.8% on stacSOL → NAV climbs · volume IS yield',
+    'every cross-pair trade burns 6.9% on stacSOL → NAV climbs · volume IS yield',
   )
   poolLines.push('')
   poolLines.push(shareUrl)
@@ -95,7 +95,7 @@ export function TweetButton({
       `burn P&L: ${sign}${pnlSol} SOL (${pnlPct}) ${profitable ? '✓' : '⏳'}`,
     )
     lines.push('')
-    lines.push('NAV-only LST · every trade burns 13.8% on stacSOL → rate ratchets')
+    lines.push('NAV-only LST · every trade burns 6.9% on stacSOL → rate ratchets')
     lines.push('')
     lines.push(shareUrl)
     if (refTagline) lines.push(refTagline)
@@ -123,14 +123,14 @@ export function TweetButton({
             <code className="text-[var(--color-fg)] font-mono">
               ?ref={publicKey!.toBase58().slice(0, 4)}…{publicKey!.toBase58().slice(-4)}
             </code>
-            . Mints through this tweet earn you 6.9% as stacSOL.
+            . Mints through this tweet earn you 3.45% as stacSOL.
           </>
         ) : ref.isMarketingDefault ? (
           <>
             no wallet connected — tweets link to{' '}
             <code className="text-[var(--color-fg)] font-mono">stacsol.app</code>{' '}
             with the marketing default ref. Connect to attach{' '}
-            <em>your</em> wallet and earn 6.9% on referred mints.
+            <em>your</em> wallet and earn 3.45% on referred mints.
           </>
         ) : (
           <>

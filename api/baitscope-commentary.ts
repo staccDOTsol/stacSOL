@@ -14,7 +14,7 @@ import { ensureSchema, getPool } from './_db.js'
 // POST {windowMin?: number}. windowMin default 60, max 1440.
 
 const LAMPORTS_PER_SOL = 1_000_000_000
-const T22_FEE_RATE = 0.138
+const T22_FEE_RATE = 0.069
 
 interface SummaryStats {
   windowMin: number
@@ -177,9 +177,9 @@ function fallbackCommentary(s: SummaryStats): string {
 
 async function claudeCommentary(s: SummaryStats, apiKey: string): Promise<string | null> {
   const prompt =
-    `You are the analyst for stacSOL's "baitscope" dashboard — a Token-2022 LST with a 13.8% transfer fee that gets swept into a burn loop, raising NAV per token over time. ` +
+    `You are the analyst for stacSOL's "baitscope" dashboard — a Token-2022 LST with a 6.9% transfer fee that gets swept into a burn loop, raising NAV per token over time. ` +
     `An imbalance daemon ("bait-loop") deliberately churns stacSOL through cross-pair LPs (Staccana, PROOFV3, USDC, etc.) to create arbitrage opportunities. ` +
-    `Every transfer through those pools fires the 13.8% T22 fee — both ours and any third-party arber's. Burn-loop sweeps the withheld stacSOL, recovers SOL to repay bait cost, and burns the excess.\n\n` +
+    `Every transfer through those pools fires the 6.9% T22 fee — both ours and any third-party arber's. Burn-loop sweeps the withheld stacSOL, recovers SOL to repay bait cost, and burns the excess.\n\n` +
     `Here's the last ${s.windowMin}-minute summary:\n` +
     `• Bait cycles: ${s.cycles} (size ${s.totalSizeSol.toFixed(3)} SOL total, net ${s.netSol >= 0 ? '+' : ''}${s.netSol.toFixed(4)} SOL)\n` +
     `• Total transfer volume: ${s.transferVolumeStac.toFixed(4)} stacSOL\n` +

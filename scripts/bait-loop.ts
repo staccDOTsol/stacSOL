@@ -70,9 +70,8 @@ const WSOL = 'So11111111111111111111111111111111111111112'
 const DECIMALS = 9
 
 // ---------------------------------------------------------------- env
-const RPC_URL =
-  process.env.RPC_URL ??
-  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+const RPC_URL = process.env.RPC_URL
+if (!RPC_URL) throw new Error('set RPC_URL env var')
 
 const MANAGER_STATE_URL =
   process.env.MANAGER_STATE_URL ?? 'https://stacsol.app/api/manager-state'

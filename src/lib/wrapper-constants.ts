@@ -32,7 +32,7 @@ export const WRAPPER_VAULT = new PublicKey(
  * metadata attached for wallet / explorer display.
  *
  * Decimals match the underlying (9). 1 wstacSOL ≡ 1 stacSOL at unwrap time
- * (modulo the underlying's 1380-bps transfer fee on the vault → user leg).
+ * (modulo the underlying's 690-bps transfer fee on the vault → user leg).
  */
 export const WSTACSOL_MINT = new PublicKey(
   'GB2Y9s7N9HcpCmrqyByygMfRsJDLH1Gt7wasTtczohYL',
@@ -40,12 +40,8 @@ export const WSTACSOL_MINT = new PublicKey(
 export const WSTACSOL_VERSION = 1
 
 // Underlying-mint transfer fee on stacSOL (T22 TransferFeeConfig).
-// 1380 bps = 13.8 %. Applies on every underlying transfer, including:
+// 690 bps = 6.9 %. Applies on every underlying transfer, including:
 //   - wrap (user → vault)        → user gets net stacSOL × (1 − fee) as wstacSOL
 //   - unwrap (vault → user)      → user gets unwrap amount × (1 − fee) as stacSOL
 // Surfacing it in the UI so users see the actual payout, not the gross.
-//
-// Fork fee split: of the harvested 13.8%, half (6.9%) is burned for NAV (the
-// stacSOL "pitch"), the other half (6.9%) is redeemed to SOL at NAV and sent
-// to the liqd destination PDA. See scripts/burn-loop.ts.
-export const STACSOL_FEE_BPS = 1380
+export const STACSOL_FEE_BPS = 690

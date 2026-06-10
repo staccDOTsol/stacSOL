@@ -5,6 +5,11 @@
    index.html). Keeping them out of @theme below avoids Tailwind treating
    them as compile-time constants — they need to switch at runtime. */
 @import "./theme.css";
+/* Editorial design system (ivory / ink / jade). Scoped to surfaces that
+   opt in via body[data-design="editorial"] — set by Landing / App / Terms
+   on mount, cleared on unmount so the legacy fire-red pages keep their
+   existing palette. */
+@import "./stacsol.css";
 
 @theme {
   --font-mono: "JetBrains Mono", "SF Mono", ui-monospace, Menlo, monospace;
@@ -126,3 +131,62 @@ body {
 .wallet-adapter-modal-wrapper { background: var(--color-bg2) !important; border: 1px solid var(--color-hot) !important; }
 .wallet-adapter-modal-title { color: var(--color-hot) !important; }
 .wallet-adapter-modal-list .wallet-adapter-button { background: transparent !important; color: var(--color-fg) !important; border: 1px solid var(--color-dim) !important; }
+
+/* ── Editorial design — body palette override ─────────────────────────────
+ * stacsol.css defines a `body { ... }` rule with the ivory palette, but
+ * this file's `body { ... background: var(--color-bg); }` is later in load
+ * order and wins at equal specificity. Scoping the editorial body rules
+ * to `body[data-design="editorial"]` bumps specificity to (0,0,1,1) so
+ * they beat the legacy fire-red palette. The pre-paint inline script in
+ * index.html stamps both `data-design` and `data-theme` before content
+ * paints, eliminating FOUC.
+ * ────────────────────────────────────────────────────────────────────────*/
+body[data-design="editorial"] {
+  background: var(--bg) !important;
+  color: var(--ink);
+  font-family: var(--f-sans);
+
+  /* Remap the legacy fire-red palette onto the editorial tokens so Tailwind
+   * utilities baked into Portfolio / Leaderboard / Faq (`text-[var(--color-hot)]`,
+   * `bg-[var(--color-bg)]`, …) automatically recolor onto the ivory/jade
+   * system. This avoids rewriting every component while keeping the visual
+   * language consistent across surfaces. */
+  --color-bg: var(--bg);
+  --color-bg2: var(--bg-soft);
+  --color-fg: var(--ink);
+  --color-hot: var(--accent-deep);
+  --color-ember: var(--accent);
+  --color-warn: var(--warn);
+  --color-warn-tint: color-mix(in oklch, var(--warn), transparent 92%);
+  --color-dim: var(--ink-muted);
+  --color-green: var(--pos);
+  --color-card-hover-bg: var(--bg-elev);
+  --color-card-hover-border: var(--accent-deep);
+  --color-card-hover-shadow1: color-mix(in oklch, var(--accent-deep), transparent 70%);
+  --color-card-hover-shadow2: color-mix(in oklch, var(--accent-deep), transparent 80%);
+  --color-card-hover-shadow3: color-mix(in oklch, var(--accent), transparent 80%);
+  --color-card-before-gradient: color-mix(in oklch, var(--accent), transparent 92%);
+  --color-body-radial1: color-mix(in oklch, var(--accent), transparent 95%);
+  --color-body-radial2: color-mix(in oklch, var(--accent), transparent 97%);
+  --color-flash-glow: color-mix(in oklch, var(--accent-deep), transparent 50%);
+}
+body[data-design="editorial"][data-theme="ink"] {
+  background: var(--bg) !important;
+}
+/* On editorial routes, dampen the wallet-adapter modal's red overrides so
+   it doesn't visually clash with the jade palette. */
+body[data-design="editorial"] .wallet-adapter-button {
+  background: var(--ink) !important;
+  color: var(--bg) !important;
+  text-transform: none !important;
+  letter-spacing: 0 !important;
+  font-family: var(--f-sans) !important;
+}
+body[data-design="editorial"] .wallet-adapter-modal-wrapper {
+  background: var(--bg-elev) !important;
+  border: 1px solid var(--line) !important;
+}
+body[data-design="editorial"] .wallet-adapter-modal-title {
+  color: var(--ink) !important;
+  font-family: var(--f-display) !important;
+}

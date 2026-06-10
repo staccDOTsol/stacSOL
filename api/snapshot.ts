@@ -44,7 +44,7 @@ async function fetchLpPriceSol(): Promise<number | null> {
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     await ensureSchema()
-    const endpoint = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+    const endpoint = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
 
     const [poolAcc, mintAcc, lpPriceSol] = await Promise.all([
       getAccountInfoBase64(endpoint, POOL, 'processed'),

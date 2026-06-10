@@ -14,7 +14,7 @@ export function HowItWorks() {
             actual yield is the floor plus everything else.
           </p>
           <p>
-            Every transfer of stacSOL withholds 13.8% via Token-2022. The
+            Every transfer of stacSOL withholds 6.9% via Token-2022. The
             harvest loop sweeps and burns those holdings every five minutes,
             so the redemption rate compounds with{' '}
             <span className="text-[var(--color-ember)] font-black">cross-pair churn</span>:
@@ -53,7 +53,7 @@ export function HowItWorks() {
               through stacSOL pairs.
             </li>
             <li>
-              More routing → more 13.8% transfer-fee burns → NAV climbs faster.
+              More routing → more 6.9% transfer-fee burns → NAV climbs faster.
             </li>
             <li>
               Rising rate → attracts more pairs and more speculators → repeat.
@@ -151,7 +151,7 @@ export function HowItWorks() {
           <p>
             The rate only moves up. If you&apos;re green and need the SOL, burn here — the
             on-site burn is always a better fill than aping out on a DEX, because DEX prices
-            have to absorb the 13.8% transfer fee on top of pool slippage.
+            have to absorb the 6.9% transfer fee on top of pool slippage.
           </p>
         </Section>
       </div>

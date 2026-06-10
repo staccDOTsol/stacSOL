@@ -238,7 +238,7 @@ export default function Liqmonsta() {
           Number(stacPool.poolTokenSupplyAccounting)
         : 1
     const expectedStacAtom = BigInt(
-      Math.floor((Number(lamportsToDeposit) * 0.862) / navNow),
+      Math.floor((Number(lamportsToDeposit) * 0.931) / navNow),
     )
 
     // 4. Build open txs.
@@ -377,7 +377,7 @@ function Hero() {
         One click. Every SOL-paired LP you own — DLMM, CPMM, CLMM, Whirlpools,
         DAMM — closed, the SOL minted into stacSOL, reopened on a mirrored
         stacSOL pair at the equivalent price. Same range, same exposure. Every
-        swap on the new LP feeds the 13.8% transfer-fee burn.
+        swap on the new LP feeds the 6.9% transfer-fee burn.
       </p>
     </section>
   )
@@ -457,9 +457,9 @@ function ScanSummary({
         tone="green"
       />
       <Stat
-        big={`${totalSol.toFixed(3)}`}
+        big={`${totalSol.toFixed(6)}`}
         label="total SOL to convert"
-        sub={nav != null ? `NAV ${nav.toFixed(4)} SOL/stacSOL` : 'NAV loading…'}
+        sub={nav != null ? `NAV ${nav.toFixed(6)} SOL/stacSOL` : 'NAV loading…'}
         tone="green"
       />
     </div>
@@ -519,7 +519,7 @@ function SmashButton({
       <p className="mt-3 m-0 text-[11px] text-[var(--color-dim)]">
         {busy
           ? 'one sign prompt per position — close → mint → reopen, sequential per position'
-          : `closes each position on its native AMM, mints ${totalSol.toFixed(3)} SOL → stacSOL, reopens at mirrored range`}
+          : `closes each position on its native AMM, mints ${totalSol.toFixed(6)} SOL → stacSOL, reopens at mirrored range`}
       </p>
     </div>
   )
@@ -607,17 +607,17 @@ function PositionList({ positions }: { positions: RawPosition[] }) {
               </div>
               <div className="text-right shrink-0">
                 <div className="tabular-mono text-[13px] font-black text-[var(--color-fg)]">
-                  {p.solAtom > 0n && `${solUi.toFixed(4)} SOL`}
+                  {p.solAtom > 0n && `${solUi.toFixed(6)} SOL`}
                   {p.stacAtom > 0n && (
                     <>
                       {p.solAtom > 0n && ' + '}
-                      {stacUi.toFixed(4)} stacSOL
+                      {stacUi.toFixed(6)} stacSOL
                     </>
                   )}
                   {p.otherAtom > 0n && (
                     <>
                       {(p.solAtom > 0n || p.stacAtom > 0n) && ' + '}
-                      {otherUi.toFixed(2)} {p.otherSymbol}
+                      {otherUi.toFixed(6)} {p.otherSymbol}
                     </>
                   )}
                   {p.solAtom === 0n && p.stacAtom === 0n && p.otherAtom === 0n && (

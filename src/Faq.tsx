@@ -12,6 +12,7 @@ import { useEffect } from 'react'
 import { ConnectionProvider } from '@solana/wallet-adapter-react'
 import { RPC_URL } from './lib/constants'
 import { usePool } from './hooks/usePool'
+import EditorialNav from './components/EditorialNav'
 
 export default function Faq() {
   useEffect(() => {
@@ -22,13 +23,20 @@ export default function Faq() {
     }
   }, [])
 
+  // Opt into the editorial palette — internal Tailwind utilities remap
+  // through the body[data-design="editorial"] var aliases in index.css.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
+
   return (
     // We wrap in a ConnectionProvider so usePool() can read live pool state,
     // but no WalletProvider — FAQ is read-only and doesn't need to sign
     // anything. Keeps the bundle small.
     <ConnectionProvider endpoint={RPC_URL} config={{ commitment: 'confirmed' }}>
       <div className="min-h-screen text-[var(--color-fg)]">
-        <Nav />
+        <EditorialNav pathname="/faq" />
         <Hero />
         <LiveStats />
         <Section title="Contact">
@@ -104,8 +112,8 @@ export default function Faq() {
                 </p>
                 <p>
                   The reserve account is on chain. Look it up. If it ever
-                  drifts below <code>supply × rate × 0.862</code> (the 0.862
-                  is the 13.8% withdraw fee that stays in the pool), that
+                  drifts below <code>supply × rate × 0.931</code> (the 0.931
+                  is the 6.9% withdraw fee that stays in the pool), that
                   would be a real problem. Today it sits comfortably above.
                 </p>
               </>
@@ -192,7 +200,7 @@ export default function Faq() {
                   (<code>total_lamports</code>, <code>pool_token_supply</code>).
                   There is no code path where the displayed rate exceeds
                   what the program will actually pay. Either the burn lands
-                  at <code>0.862 × amount × rate</code> or the ix reverts
+                  at <code>0.931 × amount × rate</code> or the ix reverts
                   with no funds moved.
                 </p>
               </>
@@ -223,7 +231,7 @@ export default function Faq() {
                 <p>
                   The stacSOL mint itself is a standard{' '}
                   <strong>Token-2022 mint</strong> with the official{' '}
-                  <code>TransferFeeConfig</code> extension at 13.8%. Token-2022
+                  <code>TransferFeeConfig</code> extension at 6.9%. Token-2022
                   is Solana&apos;s officially-deployed program (
                   <code>TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb</code>).
                   Nothing exotic in the mint either.
@@ -253,32 +261,32 @@ export default function Faq() {
 
         <Section title="Fees">
           <Q
-            q="Is there really a 13.8% fee on both mint AND burn?"
+            q="Is there really a 6.9% fee on both mint AND burn?"
             a={
               <>
                 <p>
                   Yes. Both directions. Set in the pool config and visible on
-                  chain. Mint pays the fee in SOL (you receive 86.2% of the
+                  chain. Mint pays the fee in SOL (you receive 93.1% of the
                   pool token equivalent); burn pays the fee in pool tokens
-                  (you receive `0.862 × amount × current_rate` SOL).
+                  (you receive `0.931 × amount × current_rate` SOL).
                 </p>
                 <p>
                   This is intentional. The fee feeds the manager wallet,
                   which funds operations (RPC, infra, harvest cron, dev). On
                   burn the fee is taken in stacSOL not SOL — so the SOL you
                   receive matches the rate the chart shows, just multiplied
-                  by 0.862.
+                  by 0.931.
                 </p>
               </>
             }
           />
           <Q
-            q="What's the Token-2022 transfer fee for? Is that ALSO 13.8%?"
+            q="What's the Token-2022 transfer fee for? Is that ALSO 6.9%?"
             a={
               <>
                 <p>
-                  Same 13.8%. Every <code>Transfer</code> ix on the stacSOL
-                  mint withholds 13.8% to the mint's withheld bucket. The
+                  Same 6.9%. Every <code>Transfer</code> ix on the stacSOL
+                  mint withholds 6.9% to the mint's withheld bucket. The
                   harvest loop sweeps that withheld stacSOL and burns it
                   every five minutes — supply drops, reserve unchanged,
                   redemption rate climbs. That's the entire yield mechanism.
@@ -301,8 +309,8 @@ export default function Faq() {
                 <p>Two reasons stack:</p>
                 <ol>
                   <li>
-                    <strong>DEX prices have to absorb the 13.8% transfer fee.</strong>{' '}
-                    Buyers on the other side of your sell pay 13.8% on the
+                    <strong>DEX prices have to absorb the 6.9% transfer fee.</strong>{' '}
+                    Buyers on the other side of your sell pay 6.9% on the
                     stacSOL they receive — so they bid down to compensate.
                     You eat that bid-down on top of normal AMM slippage.
                   </li>
@@ -320,11 +328,11 @@ export default function Faq() {
             }
           />
           <Q
-            q="What's the referral 50% / 6.9% thing?"
+            q="What's the referral 50% / 3.45% thing?"
             a={
               <>
                 <p>
-                  The 13.8% deposit fee splits 50/50 between the manager
+                  The 6.9% deposit fee splits 50/50 between the manager
                   (stacc) and a "referrer" wallet. That referrer slot defaults
                   to the marketing wallet (
                   <code>Bq4KMa…fF6j</code>
@@ -335,7 +343,7 @@ export default function Faq() {
                   it.
                 </p>
                 <p>
-                  Result: ≈6.9% of every referred mint lands as stacSOL in
+                  Result: ≈3.45% of every referred mint lands as stacSOL in
                   the referrer's ATA. Connect your wallet on the homepage to
                   generate your share link.
                 </p>
@@ -385,7 +393,7 @@ export default function Faq() {
                   Floor is bounded below by validator staking yield (~7%
                   APR) — that&apos;s the pure-staking baseline of the
                   underlying Sanctum stake pool. Everything on top is from
-                  the 13.8% Token-2022 transfer-fee burn loop, which scales
+                  the 6.9% Token-2022 transfer-fee burn loop, which scales
                   with <strong>cross-pair trading volume</strong>.
                 </p>
                 <p>
@@ -402,7 +410,7 @@ export default function Faq() {
                     <strong className="text-[var(--color-green)]">Volume growth</strong>{' '}
                     pulls it <em>up</em> — every new cross-pair, every new
                     LP venue, every new meme launch using stacSOL as quote
-                    means more Transfer ixs → more 13.8% withheld → more
+                    means more Transfer ixs → more 6.9% withheld → more
                     burned per harvest cycle.
                   </li>
                 </ul>
@@ -468,7 +476,7 @@ export default function Faq() {
                   The protocol grows in the opposite direction: more
                   cross-pairs listing against stacSOL → deeper liquidity →
                   tighter spreads → DEX traders route through stacSOL pairs →
-                  more 13.8% transfer-fee burns → NAV climbs faster → attracts
+                  more 6.9% transfer-fee burns → NAV climbs faster → attracts
                   more pairs. Repeat.
                 </p>
               </>
@@ -480,7 +488,7 @@ export default function Faq() {
               <>
                 <p>
                   When the redemption rate crosses your breakeven (your
-                  cost-basis SOL ÷ your stacSOL balance ÷ 0.862, accounting
+                  cost-basis SOL ÷ your stacSOL balance ÷ 0.931, accounting
                   for the burn fee). Above that, every basis point of NAV
                   climb is free money.
                 </p>
@@ -608,7 +616,7 @@ export default function Faq() {
             }
           />
           <Q
-            q="Can the team turn off the 13.8% transfer fee?"
+            q="Can the team turn off the 6.9% transfer fee?"
             a={
               <>
                 <p>
@@ -634,7 +642,7 @@ export default function Faq() {
                   The on-site rate (NAV) is what <code>WithdrawSol</code>{' '}
                   actually pays. The DEX price is whatever the thinnest LP
                   on Solana decided to quote — almost always lower than NAV
-                  because DEX bidders have to discount the 13.8% transfer fee
+                  because DEX bidders have to discount the 6.9% transfer fee
                   they'll pay if they ever try to move the stacSOL.
                 </p>
                 <p>
@@ -679,15 +687,15 @@ function LiveStats() {
   const total = Number(pool.poolTotalLamports) / 1e9
   const supply = Number(pool.poolTokenSupplyAccounting) / 1e9
   const rate = supply > 0 ? total / supply : 0
-  // First-round payout: each user's burn yields 0.862 × amount × rate.
-  // The remaining 0.138 lands in the manager fee account as stacSOL.
+  // First-round payout: each user's burn yields 0.931 × amount × rate.
+  // The remaining 0.069 lands in the manager fee account as stacSOL.
   // The protocol's mech burns those manager fees, which pays out the
-  // remaining ~13.8% of reserve in a follow-on cascade. Net effect across
+  // remaining ~6.9% of reserve in a follow-on cascade. Net effect across
   // ALL rounds: the entire reserve pays out, supply → 0, rate climbs
   // monotonically from Token-2022 withheld being harvested (supply drops
   // without reserve outflow). The "surplus" below is the SOL waiting to
   // pay out the cascade rounds — NOT idle profit, NOT extractable rent.
-  const userBurnOut = supply * 0.862 * rate
+  const userBurnOut = supply * 0.931 * rate
   const cascadeRemaining = total - userBurnOut
 
   return (
@@ -708,8 +716,8 @@ function LiveStats() {
         </div>
         <p className="mt-3 text-[11px] text-[var(--color-dim)] leading-relaxed">
           <strong>Round 1</strong> — every holder burns at the same instant:{' '}
-          <code>{supply.toFixed(2)} × 0.862 × {rate.toFixed(4)} = {userBurnOut.toFixed(2)} SOL</code>{' '}
-          paid out to users; <code>{(supply * 0.138).toFixed(2)}</code> stacSOL
+          <code>{supply.toFixed(2)} × 0.931 × {rate.toFixed(4)} = {userBurnOut.toFixed(2)} SOL</code>{' '}
+          paid out to users; <code>{(supply * 0.069).toFixed(2)}</code> stacSOL
           accumulates in the manager fee account.{' '}
           <strong>Round 2+</strong> — the protocol&apos;s mech immediately
           burns those manager-fee tokens, paying out the remaining{' '}
@@ -720,7 +728,7 @@ function LiveStats() {
           Net: the <strong>entire {total.toFixed(2)} SOL</strong> reserve
           pays out by the end of a complete bankrun. Supply → 0. The rate
           actually <em>climbs</em> mid-cascade because every Token-2022
-          transfer (manager-fee routing) triggers a 13.8% withhold, which
+          transfer (manager-fee routing) triggers a 6.9% withhold, which
           the harvest loop burns within 5 minutes — supply drops without
           touching the reserve.
         </p>
@@ -766,7 +774,7 @@ function BankrunMath() {
   const total = Number(pool.poolTotalLamports) / 1e9
   const supply = Number(pool.poolTokenSupplyAccounting) / 1e9
   const rate = supply > 0 ? total / supply : 0
-  const round1Out = supply * 0.862 * rate
+  const round1Out = supply * 0.931 * rate
   const cascadeRemaining = total - round1Out
   return (
     <>
@@ -782,9 +790,9 @@ function BankrunMath() {
       </ul>
       <p>
         <strong>Round 1 — everyone burns at the same instant.</strong>{' '}
-        <code>WithdrawSol</code> burns 86.2% of each user&apos;s amount
-        (paying them <code>0.862 × amount × rate</code>) and routes the
-        13.8% manager fee to the pool&apos;s manager fee account as
+        <code>WithdrawSol</code> burns 93.1% of each user&apos;s amount
+        (paying them <code>0.931 × amount × rate</code>) and routes the
+        6.9% manager fee to the pool&apos;s manager fee account as
         stacSOL. Total user payout: <code>{round1Out.toFixed(2)} SOL</code>.
         Remaining in reserve:{' '}
         <code>{cascadeRemaining.toFixed(2)} SOL</code>.
@@ -792,7 +800,7 @@ function BankrunMath() {
       <p>
         <strong>Round 2+ — the manager burns the fees.</strong> Per the
         protocol mech, every stacSOL that lands in the manager fee account
-        gets burned. Each manager-burn does the same 0.862/0.138 split,
+        gets burned. Each manager-burn does the same 0.931/0.069 split,
         recursively, with the remainder cascading back to the fee account
         and burning again. Geometric sum: the remaining{' '}
         <code>{cascadeRemaining.toFixed(2)} SOL</code> pays out across the
@@ -805,7 +813,7 @@ function BankrunMath() {
           cascade
         </strong>{' '}
         because every Token-2022 transfer (each manager-fee routing) triggers
-        a 13.8% withhold that the harvest loop burns within 5 minutes —
+        a 6.9% withhold that the harvest loop burns within 5 minutes —
         supply drops without any reserve outflow. Late burners get a
         better rate than early burners.
       </p>
@@ -820,26 +828,9 @@ function BankrunMath() {
 }
 
 // -----------------------------------------------------------------------------
-// Layout primitives.
+// Layout primitives. Legacy Nav() replaced by the shared EditorialNav in
+// components/.
 // -----------------------------------------------------------------------------
-
-function Nav() {
-  return (
-    <div className="sticky top-0 z-20 bg-[rgba(8,2,3,0.85)] backdrop-blur border-b border-[rgb(255_34_0_/_0.15)]">
-      <div className="max-w-[860px] mx-auto px-6 py-3 flex items-center justify-between">
-        <a
-          href="/"
-          className="text-[11px] font-black uppercase tracking-[3px] text-[var(--color-hot)] no-underline [text-shadow:0_0_8px_rgba(255,34,0,0.5)]"
-        >
-          ← stacsol.app
-        </a>
-        <span className="text-[10px] font-black uppercase tracking-[3px] text-[var(--color-dim)]">
-          frequently asked
-        </span>
-      </div>
-    </div>
-  )
-}
 
 function Hero() {
   return (

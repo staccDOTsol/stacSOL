@@ -52,7 +52,7 @@ const replayRefs = tableArg === 'ref' || tableArg === 'both'
 const replayMgr = tableArg === 'mgr' || tableArg === 'both'
 
 const DATABASE_URL = process.env.DATABASE_URL
-const RPC_URL = process.env.RPC_URL ?? 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+const RPC_URL = process.env.RPC_URL ?? 'https://api.mainnet-beta.solana.com'
 if (!DATABASE_URL) {
   console.error('DATABASE_URL not set')
   process.exit(1)

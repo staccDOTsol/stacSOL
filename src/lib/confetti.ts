@@ -76,13 +76,37 @@ export function shake(el: HTMLElement | null) {
   )
 }
 
+// SPL stake-pool v1.0.0 program error codes — same numbering as Sanctum's
+// fork. Mapping to human-readable strings so we don't surface raw "0x11" in
+// the UI. Codes covering the deposit / withdraw paths only; rare admin
+// errors (validator management, fee config) fall through to the generic
+// fallback.
+const STAKE_POOL_ERRORS: Record<number, string> = {
+  0x02: 'pool state invalid',
+  0x03: 'pool math overflow',
+  0x04: 'fee too high',
+  0x05: 'wrong mint',
+  0x07: 'wallet signature missing',
+  0x09: 'wrong manager-fee account',
+  0x0a: 'wrong pool mint',
+  0x0b: 'stake account in wrong state',
+  0x10: "validator list out of date — pool needs UpdateValidatorListBalance",
+  0x11: "pool needs an epoch crank — try again in a moment (manager normally cranks within 5 min)",
+  0x12: 'unknown validator stake account',
+}
+
 /** Try to extract a useful one-liner from a Solana RPC error blob. */
 export function summarizeError(e: unknown): string {
   if (!e) return 'unknown error'
   const msg = e instanceof Error ? e.message : String(e)
   // Common patterns from web3.js / RPC
   const customErr = msg.match(/custom program error: (0x[0-9a-fA-F]+)/)
-  if (customErr) return `program error ${customErr[1]}`
+  if (customErr) {
+    const code = parseInt(customErr[1], 16)
+    const named = STAKE_POOL_ERRORS[code]
+    if (named) return named
+    return `program error ${customErr[1]}`
+  }
   const insErr = msg.match(/Error processing Instruction (\d+):\s*([^.]+)/)
   if (insErr) return `instruction ${insErr[1]}: ${insErr[2].trim()}`
   const blockhashErr = /BlockhashNotFound|TransactionExpired/.exec(msg)

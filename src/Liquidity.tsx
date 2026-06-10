@@ -263,7 +263,7 @@ function PoolCard({ pool }: { pool: RayPool }) {
         ? `${solPerStac.toFixed(6)} SOL / stacSOL`
         : '—'
     }
-    return `${pool.price.toFixed(4)} ${pool.mintB.symbol} / ${pool.mintA.symbol}`
+    return `${pool.price.toFixed(6)} ${pool.mintB.symbol} / ${pool.mintA.symbol}`
   })()
 
   return (
@@ -540,7 +540,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
       const haveBUi = Number(haveB) / Math.pow(10, pool.mintB.decimals)
       updateStep(0, {
         state: 'done',
-        detail: `you have ${haveAUi.toFixed(4)} ${pool.mintA.symbol}, ${haveBUi.toFixed(4)} ${pool.mintB.symbol}`,
+        detail: `you have ${haveAUi.toFixed(6)} ${pool.mintA.symbol}, ${haveBUi.toFixed(6)} ${pool.mintB.symbol}`,
       })
 
       // --- 2. Compute shortfalls (in atomic) ---
@@ -556,19 +556,19 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
       // anywhere into SOL itself.
       if (shortfallA > 0n && isAWsol) {
         throw new Error(
-          `you only have ${haveAUi.toFixed(4)} SOL but need ${(Number(aTargetAtom) / 1e9).toFixed(4)}`,
+          `you only have ${haveAUi.toFixed(6)} SOL but need ${(Number(aTargetAtom) / 1e9).toFixed(6)}`,
         )
       }
       if (shortfallB > 0n && isBWsol) {
         throw new Error(
-          `you only have ${haveBUi.toFixed(4)} SOL but need ${(Number(bTargetAtom) / 1e9).toFixed(4)}`,
+          `you only have ${haveBUi.toFixed(6)} SOL but need ${(Number(bTargetAtom) / 1e9).toFixed(6)}`,
         )
       }
 
       // Match against stacSOL mint to decide between native DepositSol and
       // Jupiter swap. Jupiter's SOL → stacSOL route locks vote-account-adjacent
       // accounts (Sanctum router) and Jito refuses to bundle that. Our own
-      // DepositSol ix is bundle-safe and avoids the 13.8% transfer fee.
+      // DepositSol ix is bundle-safe and avoids the 6.9% transfer fee.
       const isAStacsol = pool.mintA.address === STACSOL_MINT
       const isBStacsol = pool.mintB.address === STACSOL_MINT
 
@@ -625,8 +625,8 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         stepLabels.push({ label: `top up ${pool.mintA.symbol} from SOL`, state: 'running' })
         setSteps([...stepLabels])
         if (isAStacsol) {
-          // Native DepositSol path — bundle-safe, no 13.8% fee on the output.
-          // Buffer 3000bps (30%) covers Token-2022 13.8% transfer fee +
+          // Native DepositSol path — bundle-safe, no 6.9% fee on the output.
+          // Buffer 3000bps (30%) covers Token-2022 6.9% transfer fee +
           // Raydium 50% slippage tolerance + pool ratio drift.
           const stakePool = await fetchPool(connection)
           const lamportsForA = lamportsForStacsolMint(
@@ -640,7 +640,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `native DepositSol — ~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} stacSOL (no 13.8% fee)`,
+            detail: `native DepositSol — ~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(6)} SOL → ~${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(6)} stacSOL (no 6.9% fee)`,
           })
         } else {
           // 30% buffer on swap input — slippageBps is 5000 (50%) so we
@@ -667,14 +667,14 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(q.outAmount) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} ${pool.mintA.symbol} (you were short ${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)})`,
+            detail: `~${(Number(lamportsForA) / LAMPORTS_PER_SOL).toFixed(6)} SOL → ~${(Number(q.outAmount) / Math.pow(10, pool.mintA.decimals)).toFixed(6)} ${pool.mintA.symbol} (you were short ${(Number(shortfallA) / Math.pow(10, pool.mintA.decimals)).toFixed(6)})`,
           })
         }
       } else {
         stepLabels.push({
           label: `${pool.mintA.symbol} sufficient`,
           state: 'done',
-          detail: `using your ${haveAUi.toFixed(4)} ${pool.mintA.symbol}, no swap`,
+          detail: `using your ${haveAUi.toFixed(6)} ${pool.mintA.symbol}, no swap`,
         })
         setSteps([...stepLabels])
       }
@@ -684,7 +684,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         stepLabels.push({ label: `top up ${pool.mintB.symbol} from SOL`, state: 'running' })
         setSteps([...stepLabels])
         if (isBStacsol) {
-          // 3000bps (30%) buffer — comfortably covers Token-2022 13.8% fee +
+          // 3000bps (30%) buffer — comfortably covers Token-2022 6.9% fee +
           // Raydium's now-50% slippage tolerance + pool ratio drift.
           const stakePool = await fetchPool(connection)
           const lamportsForB = lamportsForStacsolMint(
@@ -698,7 +698,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `native DepositSol — ~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} stacSOL (no 13.8% fee)`,
+            detail: `native DepositSol — ~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(6)} SOL → ~${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(6)} stacSOL (no 6.9% fee)`,
           })
         } else {
           // Same 30% headroom rationale as the A-side path above.
@@ -721,14 +721,14 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
             state: 'done',
-            detail: `~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(4)} SOL → ~${(Number(q.outAmount) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} ${pool.mintB.symbol} (you were short ${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)})`,
+            detail: `~${(Number(lamportsForB) / LAMPORTS_PER_SOL).toFixed(6)} SOL → ~${(Number(q.outAmount) / Math.pow(10, pool.mintB.decimals)).toFixed(6)} ${pool.mintB.symbol} (you were short ${(Number(shortfallB) / Math.pow(10, pool.mintB.decimals)).toFixed(6)})`,
           })
         }
       } else {
         stepLabels.push({
           label: `${pool.mintB.symbol} sufficient`,
           state: 'done',
-          detail: `using your ${haveBUi.toFixed(4)} ${pool.mintB.symbol}, no swap`,
+          detail: `using your ${haveBUi.toFixed(6)} ${pool.mintB.symbol}, no swap`,
         })
         setSteps([...stepLabels])
       }
@@ -775,7 +775,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
       txs.push(addResult.transaction)
       updateStep(stepLabels.length - 1, {
         state: 'done',
-        detail: `${inputNum.toFixed(4)} ${chosenSym} + ~${matchingOther.toFixed(4)} ${otherSym}, tip ${(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(4)} SOL`,
+        detail: `${inputNum.toFixed(6)} ${chosenSym} + ~${matchingOther.toFixed(6)} ${otherSym}, tip ${(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
       })
 
       // --- 8. Sign all in one wallet popup ---
@@ -854,7 +854,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         consumes all of one side and tops up the other from your SOL. All txs
         sign at once and stream through Helius Sender (tip:{' '}
         <span className="text-[var(--color-fg)]">
-          {(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(4)} SOL/tx
+          {(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(6)} SOL/tx
         </span>
         ).
       </div>
@@ -977,8 +977,11 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
               ? Math.min(chosenBalUi!, otherBalUi! / otherPerChosen)
               : 0
 
+            // 6dp ceiling matches the rest of the site; wSOL's 9 native
+            // decimals are still clamped to 6 (was 4) so the "max balanced"
+            // helper button stops dropping precision on small balances.
             const fmt = (n: number) =>
-              n.toFixed(Math.min(6, isChosenWsol ? 4 : decimals))
+              n.toFixed(Math.min(6, decimals))
 
             return (
               <span className="flex items-center gap-3">
@@ -986,7 +989,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
                   <button
                     type="button"
                     onClick={() => setTokenAmount(fmt(balancedMax))}
-                    title={`Use both wallet balances at the current pool ratio (${chosenBalUi!.toFixed(4)} ${chosenSym} + ${otherBalUi!.toFixed(4)} ${otherSym}, capped where one runs out). No SOL → token swap.`}
+                    title={`Use both wallet balances at the current pool ratio (${chosenBalUi!.toFixed(6)} ${chosenSym} + ${otherBalUi!.toFixed(6)} ${otherSym}, capped where one runs out). No SOL → token swap.`}
                     className="text-[10px] uppercase tracking-wider text-[var(--color-green)] hover:brightness-125 font-black"
                   >
                     max balanced
@@ -1067,7 +1070,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
           </div>
         )}
         <div className="text-[10px] text-[var(--color-dim)] mt-1">
-          plus {(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(4)} SOL helius sender tip per tx + ~0.001 SOL fees
+          plus {(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(6)} SOL helius sender tip per tx + ~0.001 SOL fees
         </div>
       </div>
 
@@ -1096,7 +1099,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
         {submitting
           ? 'working…'
           : inputNum > 0
-          ? `deposit ${inputNum} ${chosenSym}${matchingOther > 0 ? ` + ${matchingOther.toFixed(4)} ${otherSym}` : ''}`
+          ? `deposit ${inputNum} ${chosenSym}${matchingOther > 0 ? ` + ${matchingOther.toFixed(6)} ${otherSym}` : ''}`
           : `deposit ${chosenSym}`}
       </button>
 
@@ -1207,7 +1210,18 @@ function RemovePanel({
       stepLabels.push({ label: 'compute outputs', state: 'running' })
       setSteps([...stepLabels])
 
-      const lpToBurn = (lpBalance * BigInt(percent)) / 100n
+      // At 100% we burn (lpBalance − 1 atom) so a stale balance read
+      // (another in-flight tx, a pending fee deduction, an atomic dust
+      // delta from the pool itself) can't push the burn over actual
+      // on-chain LP balance — `Burn` fails on InsufficientFunds and the
+      // whole withdraw bundle aborts. The 1-atom haircut is invisible to
+      // the user (≈1e−9 of an LP token) but eliminates the off-by-one.
+      const lpToBurn =
+        percent === 100
+          ? lpBalance > 0n
+            ? lpBalance - 1n
+            : 0n
+          : (lpBalance * BigInt(percent)) / 100n
       // Expected output, atomic. Use API-reported pool amounts; slippage covers
       // any drift between now and execution.
       const totalLpUi = pool.lpAmount
@@ -1227,7 +1241,7 @@ function RemovePanel({
       const swapInB = (expectedBAtom * 95n) / 100n
       updateStep(stepLabels.length - 1, {
         state: 'done',
-        detail: `~${expectedAUi.toFixed(4)} ${pool.mintA.symbol} + ~${expectedBUi.toFixed(4)} ${pool.mintB.symbol}`,
+        detail: `~${expectedAUi.toFixed(6)} ${pool.mintA.symbol} + ~${expectedBUi.toFixed(6)} ${pool.mintB.symbol}`,
       })
 
       // --- 2. Build Raydium withdrawLiquidity tx with Jito tip ---
@@ -1270,7 +1284,7 @@ function RemovePanel({
       const txs: VersionedTransaction[] = [withdrawResult.transaction]
       updateStep(stepLabels.length - 1, {
         state: 'done',
-        detail: `burn ${myLpUi.toFixed(6)} LP, tip ${(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(4)} SOL`,
+        detail: `burn ${myLpUi.toFixed(6)} LP, tip ${(HELIUS_SENDER_TIP_LAMPORTS / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
       })
 
       // --- 3. Optional zap-out swaps (received tokens → SOL) ---
@@ -1295,7 +1309,7 @@ function RemovePanel({
             txs.push(tx)
             updateStep(stepLabels.length - 1, {
               state: 'done',
-              detail: `~${(Number(swapInA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} stacSOL → SOL via WithdrawSol (redeemed at NAV)`,
+              detail: `~${(Number(swapInA) / Math.pow(10, pool.mintA.decimals)).toFixed(6)} stacSOL → SOL via WithdrawSol (redeemed at NAV)`,
             })
           } else {
             const q = await jupiterQuote({
@@ -1314,7 +1328,7 @@ function RemovePanel({
             txs.push(tx)
             updateStep(stepLabels.length - 1, {
               state: 'done',
-              detail: `~${(Number(swapInA) / Math.pow(10, pool.mintA.decimals)).toFixed(4)} ${pool.mintA.symbol} → ~${(Number(q.outAmount) / LAMPORTS_PER_SOL).toFixed(4)} SOL`,
+              detail: `~${(Number(swapInA) / Math.pow(10, pool.mintA.decimals)).toFixed(6)} ${pool.mintA.symbol} → ~${(Number(q.outAmount) / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
             })
           }
         }
@@ -1333,7 +1347,7 @@ function RemovePanel({
             txs.push(tx)
             updateStep(stepLabels.length - 1, {
               state: 'done',
-              detail: `~${(Number(swapInB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} stacSOL → SOL via WithdrawSol (redeemed at NAV)`,
+              detail: `~${(Number(swapInB) / Math.pow(10, pool.mintB.decimals)).toFixed(6)} stacSOL → SOL via WithdrawSol (redeemed at NAV)`,
             })
           } else {
             const q = await jupiterQuote({
@@ -1352,7 +1366,7 @@ function RemovePanel({
             txs.push(tx)
             updateStep(stepLabels.length - 1, {
               state: 'done',
-              detail: `~${(Number(swapInB) / Math.pow(10, pool.mintB.decimals)).toFixed(4)} ${pool.mintB.symbol} → ~${(Number(q.outAmount) / LAMPORTS_PER_SOL).toFixed(4)} SOL`,
+              detail: `~${(Number(swapInB) / Math.pow(10, pool.mintB.decimals)).toFixed(6)} ${pool.mintB.symbol} → ~${(Number(q.outAmount) / LAMPORTS_PER_SOL).toFixed(6)} SOL`,
             })
           }
         }
@@ -1687,6 +1701,6 @@ function fmtNum(n: number | null | undefined) {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(2)}M`
   if (Math.abs(n) >= 1_000) return `${(n / 1_000).toFixed(2)}k`
   if (Math.abs(n) >= 1) return n.toFixed(2)
-  if (Math.abs(n) >= 0.01) return n.toFixed(4)
+  if (Math.abs(n) >= 0.01) return n.toFixed(6)
   return n.toFixed(6)
 }

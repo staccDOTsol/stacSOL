@@ -1,11 +1,26 @@
 import { fmtAmount, shortPk } from '../lib/format'
 import type { PoolState } from '../lib/pool'
 import { POOL } from '../lib/constants'
-import { computeApr, fmtElapsed } from '../lib/apr'
-import { useDeployTs } from '../hooks/useDeployTs'
+import { useHistory } from '../hooks/useHistory'
+
+// Reliability guards. Need to match Landing.tsx/useLivePerf so both surfaces
+// render the SAME implied APR. Previously this card used a since-deploy
+// linear annualization (`(rate−1) × year/elapsed`) while Landing used
+// trailing-24h linear, producing wildly different displayed APRs for the
+// same protocol (the user reported "1.00% APR" here vs. 400%+ on Landing).
+// Switching to trailing-24h compound aligns both surfaces.
+// Tighter caps after live-tested 43,906%-type displays on tiny NAV
+// blips. Anything > 1000% APR is almost certainly annualizing a
+// transient spike — show '—' instead of a wildly misleading number.
+// Require ≥2 days of history so a single-flip TVL delta can't ride the
+// extrapolator. The honest fallback message tells the user "data still
+// warming up" — see aprDetail below.
+const MIN_HISTORY_SPAN_DAYS = 2
+const MAX_PLAUSIBLE_DAILY = 0.05      // ~50%/yr daily, well above any real LST
+const MAX_DISPLAYED_APR_PCT = 1_000
 
 export function Stats({ pool }: { pool: PoolState | null }) {
-  const deployTs = useDeployTs()
+  const { history } = useHistory()
 
   // Authoritative rate is what the SPL stake pool program uses for redemption.
   // pool.total_lamports / pool.pool_token_supply. While pool is null (RPC
@@ -29,19 +44,45 @@ export function Stats({ pool }: { pool: PoolState | null }) {
       ? `pending sync — Token-2022 mint.supply is ${mintLive!.toFixed(6)}, drift ${drift > 0 ? '+' : ''}${drift.toFixed(6)} stacSOL`
       : null
 
-  const { apr, baselineRate, elapsedSec } = rateLoaded
-    ? computeApr(rateNum, deployTs)
-    : { apr: null, baselineRate: 0, elapsedSec: 0 }
+  // Trailing-24h compound APR. Same math as Landing.tsx so both surfaces
+  // render the same number for the same protocol state. Returns null when
+  // the history span is too short to trust.
+  let aprPct: number | null = null
+  let aprWindowDays: number | null = null
+  if (history.length > 1) {
+    const last = history[history.length - 1]
+    const target = last.ts - 24 * 60 * 60 * 1000
+    let prev = history[0]
+    for (const row of history) {
+      if (Math.abs(row.ts - target) < Math.abs(prev.ts - target)) prev = row
+    }
+    const dtDays = (last.ts - prev.ts) / (1000 * 60 * 60 * 24)
+    if (prev.rate > 0 && last.rate > prev.rate && dtDays >= MIN_HISTORY_SPAN_DAYS) {
+      const dailyRate = Math.pow(last.rate / prev.rate, 1 / dtDays) - 1
+      if (dailyRate > 0 && dailyRate <= MAX_PLAUSIBLE_DAILY) {
+        aprPct = Math.min(
+          MAX_DISPLAYED_APR_PCT,
+          (Math.pow(1 + dailyRate, 365) - 1) * 100,
+        )
+        aprWindowDays = dtDays
+      }
+    }
+  }
+  const aprDisplayable = aprPct != null && aprPct >= 0 && aprPct < MAX_DISPLAYED_APR_PCT
   const aprDisplay = !rateLoaded
     ? '—'
-    : apr !== null
-    ? `${(apr * 100).toFixed(2)}%`
-    : '…'
+    : aprDisplayable && aprPct != null
+      ? aprPct >= 1000
+        ? `${Math.round(aprPct).toLocaleString()}%`
+        : `${aprPct.toFixed(2)}%`
+      : '—'
   const aprDetail = !rateLoaded
     ? 'waiting for pool state'
-    : apr !== null
-    ? `since deploy: ${baselineRate.toFixed(2)} → ${rateStr} over ${fmtElapsed(elapsedSec)}`
-    : 'gathering data — need ≥10s elapsed since deploy'
+    : !aprDisplayable
+      ? history.length > 1
+        ? 'gathering data — need ≥12h of snapshots'
+        : 'waiting for /api/history'
+      : `trailing ${aprWindowDays!.toFixed(1)}d compound · matches landing`
 
   return (
     <Card title="Pool">

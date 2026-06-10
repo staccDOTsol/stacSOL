@@ -49,7 +49,7 @@ export function Manifesto() {
         <span className="font-black text-[var(--color-hot)]">base trading asset</span>{' '}
         for the thystaccfloweth ecosystem. mint fee, burn fee, epoch manager fee,
         Token-2022 transfer fee — every one set to{' '}
-        <span className="font-black text-[var(--color-hot)]">13.8%</span>, harvested
+        <span className="font-black text-[var(--color-hot)]">6.9%</span>, harvested
         and burned every five minutes. supply only moves down. NAV only moves up.
         every trade in the family feeds it.
       </p>
@@ -57,7 +57,7 @@ export function Manifesto() {
       {/* Numbered principles */}
       <div className="space-y-5">
         <Principle num="01" label="The fee">
-          Token-2022&apos;s TransferFee extension withholds 13.8% in the source account on every
+          Token-2022&apos;s TransferFee extension withholds 6.9% in the source account on every
           transfer — holder-to-holder, LP rebalance, DEX swap, anything that hits a Transfer ix.
         </Principle>
         <Principle num="02" label="The harvest">
@@ -83,7 +83,7 @@ export function Manifesto() {
       <div className="space-y-4 text-[13px] leading-relaxed text-[var(--color-fg)]">
         <p className="m-0">
           <span className="font-black text-[var(--color-ember)]">Always mint and burn here.</span>{' '}
-          direct pool interaction beats any DEX — DEX prices must absorb the 13.8% transfer fee on
+          direct pool interaction beats any DEX — DEX prices must absorb the 6.9% transfer fee on
           top of pool slippage, so on-site fills are structurally better.
         </p>
         <p className="m-0">

@@ -63,7 +63,7 @@ export async function ensureSchema() {
     -- the inserted row stored the CROSS-TX balance delta (sum of all
     -- kickbacks in that tx) as its fee_stacsol — so fee was over-counted ×N
     -- and sol_lamports under-counted ×(1/N). Apparent ROI on the referrers
-    -- leaderboard inflated to N² × the real 6.9% ratio.
+    -- leaderboard inflated to N² × the real 3.45% ratio.
     --
     -- We detect the legacy schema by counting PK columns on referral_credits.
     -- If it's still single-column, ensure the ix_index column exists, drop
@@ -180,7 +180,7 @@ export async function ensureSchema() {
     ALTER TABLE holder_summary ADD COLUMN IF NOT EXISTS manager_fee_earned_atom NUMERIC NOT NULL DEFAULT 0;
     ALTER TABLE holder_summary ADD COLUMN IF NOT EXISTS manager_fee_earned_count INT NOT NULL DEFAULT 0;
     -- Cached SOL value of the earned stacSOL at last NAV recompute. Updated
-    -- alongside pnl_sol so the leaderboard can show earned x NAV x 0.862
+    -- alongside pnl_sol so the leaderboard can show earned x NAV x 0.931
     -- without reading rate at query time.
     ALTER TABLE holder_summary ADD COLUMN IF NOT EXISTS earned_sol DOUBLE PRECISION NOT NULL DEFAULT 0;
 
@@ -271,7 +271,7 @@ export async function ensureSchema() {
     -- growth to source (bait vs arber + organic).
     --
     --   harvested_atom: total stacSOL swept from withholding accounts.
-    --     stacSOL transfer-volume in this window ~= harvested / 0.138.
+    --     stacSOL transfer-volume in this window ~= harvested / 0.069.
     --   recovered_atom: stacSOL WithdrawSol'd to repay bait backlog.
     --   burned_atom: stacSOL actually burned via BurnChecked — pure NAV fuel.
     --   nav_before / nav_after: pool rate before/after the tick.

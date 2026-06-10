@@ -20,8 +20,8 @@ import { ensureSchema, getPool } from './_db.js'
 //   price(stacSOL)  = NAV
 //   price(wstacSOL) = NAV × (1 − transferFeeBps/10000)
 //
-// The wstacSOL discount captures the 13.8% Token-2022 transfer fee that
-// fires on the vault → user leg of an unwrap. 1 wstacSOL → unwrap → 0.862
+// The wstacSOL discount captures the 6.9% Token-2022 transfer fee that
+// fires on the vault → user leg of an unwrap. 1 wstacSOL → unwrap → 0.931
 // stacSOL → × NAV = realizable SOL.
 //
 // Backed by pool_snapshots by default (5-min cron, postgres-cheap). Pass
@@ -32,7 +32,7 @@ const POOL = new RpcPubkey('E6oqvrLKexQwFJyCnQ8ewx8xt9tQo7uezat24f5Qixqb')
 const STACSOL_MINT = '6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f'
 const WSTACSOL_MINT = 'GB2Y9s7N9HcpCmrqyByygMfRsJDLH1Gt7wasTtczohYL'
 
-const TRANSFER_FEE_BPS = 1380 // 13.8% Token-2022 fee on stacSOL transfers
+const TRANSFER_FEE_BPS = 690 // 6.9% Token-2022 fee on stacSOL transfers
 const PAYOUT_FRACTION = (10_000 - TRANSFER_FEE_BPS) / 10_000
 
 interface NavSnapshot {
@@ -120,13 +120,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const live = String(req.query.live ?? '') === 'true'
     let snap: NavSnapshot | null = null
     if (live) {
-      const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+      const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
       snap = await fetchLiveNav(rpcUrl)
     } else {
       snap = await fetchLatestNavFromSnapshots()
       if (!snap) {
         // Fallback to live if postgres has no rows yet (cold start, fresh deploy).
-        const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+        const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
         snap = await fetchLiveNav(rpcUrl)
       }
     }

@@ -8,7 +8,7 @@
 //
 // Copy framing: the daily rate is the result of a TUG-OF-WAR between two
 // forces — supply growth (pulls per-token bumps down) vs cross-pair trading
-// volume (pulls them up via the 13.8% Token-2022 transfer-fee burn loop).
+// volume (pulls them up via the 6.9% Token-2022 transfer-fee burn loop).
 // We're currently transitioning from closed beta to production with a stack
 // of unlanded volume catalysts (ride.markets fund quote, Raydium Launchlab
 // quote-pair listing, broader LP onboarding). Don't pretend the floor is
@@ -112,12 +112,12 @@ export function YieldCalc({ pool }: Props) {
   const dailyRate =
     elapsedDays > 0.001 && rate > 0 ? Math.pow(rate, 1 / elapsedDays) - 1 : 0
 
-  // Calculator: deposit X SOL → after 13.8% mint fee, you hold
-  // (X × 0.862 / rate) stacSOL × rate = (X × 0.862) SOL of value, growing
-  // at dailyRate per day. So daily yield in SOL = X × 0.862 × dailyRate.
+  // Calculator: deposit X SOL → after 6.9% mint fee, you hold
+  // (X × 0.931 / rate) stacSOL × rate = (X × 0.931) SOL of value, growing
+  // at dailyRate per day. So daily yield in SOL = X × 0.931 × dailyRate.
   // Solve for X given target SOL/day.
   //
-  //   solDeposit = solPerDayTarget / (0.862 × dailyRate)
+  //   solDeposit = solPerDayTarget / (0.931 × dailyRate)
   //
   // Convert the user's USD target to SOL via current SOL price; if SOL
   // price hasn't loaded yet, fall back to interpreting the input as
@@ -131,7 +131,7 @@ export function YieldCalc({ pool }: Props) {
       : 0
   const solDepositNeeded =
     dailyRate > 0 && targetSolPerDay > 0
-      ? targetSolPerDay / (0.862 * dailyRate)
+      ? targetSolPerDay / (0.931 * dailyRate)
       : null
   const usdDepositNeeded =
     solDepositNeeded != null && solPriceUsd != null
@@ -246,14 +246,14 @@ export function YieldCalc({ pool }: Props) {
                 </div>
                 <div className="mt-1 leading-none">
                   <span className="tabular-mono text-3xl font-extrabold text-[var(--color-fg)]">
-                    {(solDepositNeeded * 0.862 / rate).toFixed(3)}
+                    {(solDepositNeeded * 0.931 / rate).toFixed(6)}
                   </span>
                   <span className="text-[11px] text-[var(--color-dim)] ml-1.5 uppercase tracking-wider">
                     stacSOL
                   </span>
                 </div>
                 <div className="text-[11px] text-[var(--color-dim)] mt-1">
-                  after the 13.8% mint fee
+                  after the 6.9% mint fee
                 </div>
               </div>
             </div>
@@ -264,7 +264,7 @@ export function YieldCalc({ pool }: Props) {
               (more holders → smaller per-token bump from the same fee
               harvest) and{' '}
               <span className="text-[var(--color-green)]">cross-pair volume</span>{' '}
-              (more trades through stacSOL pairs → more 13.8% Token-2022
+              (more trades through stacSOL pairs → more 6.9% Token-2022
               transfer-fee burns → bigger harvest).
             </p>
             <p className="mt-2 text-[11px] text-[var(--color-dim)] leading-relaxed">

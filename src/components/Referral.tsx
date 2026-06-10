@@ -6,12 +6,12 @@
 //      default vs explicit override from `?ref=…`).
 //   2. The user's personal share link (when wallet connected) so they can
 //      redirect that fee to their own wallet on every deposit they refer.
-//   3. The math: 50% × 13.8% deposit fee = ~6.9% of every referred SOL
+//   3. The math: 50% × 6.9% deposit fee = ~3.45% of every referred SOL
 //      deposit lands as stacSOL in the referrer's ATA.
 //
 // We're upfront about the marketing-budget default — anyone landing on
 // the site without a `?ref=` link is funding stacc's marketing wallet
-// (6.9% of their mint), and the card says so plainly. Override by
+// (3.45% of their mint), and the card says so plainly. Override by
 // pasting any wallet's `?ref=<pubkey>` link or by sharing your own.
 
 import { useEffect, useState } from 'react'
@@ -37,7 +37,7 @@ export function Referral() {
   const refShort = `${refStr.slice(0, 6)}…${refStr.slice(-4)}`
 
   return (
-    <Card title="Referral · earn 6.9% of every referred mint">
+    <Card title="Referral · earn 3.45% of every referred mint">
       {/* Status row — what's currently set + override hint */}
       <div className="flex flex-wrap items-center gap-2 text-[11px]">
         <span className="text-[var(--color-dim)] uppercase tracking-wider text-[10px]">
@@ -81,18 +81,18 @@ export function Referral() {
       {/* Plain-English explainer of the fee math + the marketing default */}
       <p className="mt-3 mb-0 text-[11px] leading-relaxed text-[var(--color-dim)]">
         Every SOL → stacSOL mint pays a{' '}
-        <span className="text-[var(--color-fg)] font-mono">13.8%</span> deposit fee.
+        <span className="text-[var(--color-fg)] font-mono">6.9%</span> deposit fee.
         The pool splits it 50/50:{' '}
         <span className="text-[var(--color-fg)]">manager (stacc)</span> takes one
         half, the <span className="text-[var(--color-fg)]">referrer</span> takes
         the other half ({' '}
-        <span className="text-[var(--color-fg)] font-mono">≈6.9%</span> of every
+        <span className="text-[var(--color-fg)] font-mono">≈3.45%</span> of every
         referred deposit, paid as stacSOL into the referrer&apos;s ATA).
         {ref.isMarketingDefault ? (
           <>
             {' '}
             <span className="text-[var(--color-warn)]">
-              By default that 6.9% lands in the marketing wallet
+              By default that 3.45% lands in the marketing wallet
             </span>{' '}
             ({refShort}). It funds shitposts, ad buys, and bagholder dinners.
             Share <em>your</em> link below to redirect it to your own wallet on
@@ -103,7 +103,7 @@ export function Referral() {
             {' '}
             You&apos;re currently routing referrals to{' '}
             <span className="text-[var(--color-fg)] font-mono">{refShort}</span>{' '}
-            — every mint you sign on this page sends them ≈6.9% as stacSOL.
+            — every mint you sign on this page sends them ≈3.45% as stacSOL.
           </>
         )}
       </p>
@@ -165,7 +165,7 @@ export function Referral() {
           </div>
         )}
         <p className="mt-2 mb-0 text-[10px] text-[var(--color-dim)]">
-          Anyone who lands on stacsol.app via your link will pay 6.9% of every
+          Anyone who lands on stacsol.app via your link will pay 3.45% of every
           mint into your wallet (as stacSOL). The link sticks across navigation
           via localStorage, so they only need to click it once to be tagged.
         </p>
@@ -180,15 +180,15 @@ export function Referral() {
  * length, emoji count as 2). Total weighted length below: ~210 chars,
  * leaving margin if X tweaks the rules. Same vibe as the pool/position
  * tweets in `TweetButton.tsx` but framed around the referrer-earnings
- * pitch — "use my link, I get 6.9% of your mint as stacSOL".
+ * pitch — "use my link, I get 3.45% of your mint as stacSOL".
  */
 function buildReferralTweetText(shareUrl: string): string {
   const lines = [
     '🔥 mint $stacSOL via my link',
     '',
-    'NAV-only LST · 13.8% in/out · every trade burns 13.8% on stacSOL → rate climbs · volume IS yield',
+    'NAV-only LST · 6.9% in/out · every trade burns 6.9% on stacSOL → rate climbs · volume IS yield',
     '',
-    '↓ 6.9% of every referred mint comes back to me as stacSOL',
+    '↓ 3.45% of every referred mint comes back to me as stacSOL',
     shareUrl,
   ]
   return lines.join('\n')

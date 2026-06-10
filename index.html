@@ -14,6 +14,22 @@
           ? s
           : window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
         document.documentElement.setAttribute('data-theme', t);
+        // Pre-paint body attrs for the editorial design system. Done via
+        // <script> instead of inline body attributes because <head> runs
+        // before <body> exists — we stash the chosen state on
+        // documentElement.dataset and apply it the moment body is parsed
+        // by the secondary inline script just inside <body>.
+        var path = location.pathname;
+        var isEditorial =
+          path === '/' ||
+          path === '/app' || path.indexOf('/app/') === 0 ||
+          path === '/terms' || path.indexOf('/terms/') === 0 ||
+          path === '/portfolio' || path.indexOf('/portfolio/') === 0 ||
+          path === '/leaderboard' || path.indexOf('/leaderboard/') === 0 ||
+          path === '/faq' || path.indexOf('/faq/') === 0 ||
+          path === '/wrap' || path.indexOf('/wrap/') === 0;
+        document.documentElement.dataset.designPending = isEditorial ? 'editorial' : '';
+        document.documentElement.dataset.themePending = t === 'dark' ? 'ink' : '';
       })();
     </script>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -24,10 +40,22 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
       rel="stylesheet"
-      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;800;900&family=JetBrains+Mono:wght@400;700;800&display=swap"
+      href="https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=Instrument+Sans:wght@400;500;600&family=Inter:wght@400;700;800;900&family=JetBrains+Mono:wght@400;500;600;700;800&display=swap"
     />
   </head>
   <body>
+    <script>
+      // Pre-paint sync: copy the queued design/theme flags from <html> over
+      // to <body> so stacsol.css's body[data-design="editorial"] +
+      // body[data-theme="ink"] selectors apply BEFORE the first paint.
+      // Without this, editorial routes briefly flash the legacy theme.css
+      // dark palette before React's mount effect runs.
+      (function () {
+        var d = document.documentElement.dataset;
+        if (d.designPending) document.body.setAttribute('data-design', d.designPending);
+        if (d.themePending) document.body.setAttribute('data-theme', d.themePending);
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

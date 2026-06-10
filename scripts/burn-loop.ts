@@ -1,36 +1,34 @@
 /**
- * stacSOL fork burn loop — with 13.8% fee split
+ * stacSOL burn loop
  *
  * Every 5 minutes:
- *   1. Find every Token-2022 token account for the mint whose
- *      TransferFeeAmount.withheld_amount ≥ MIN_CLAIM (default 0.001).
+ *   1. Find every Token-2022 token account for the stacSOL mint whose
+ *      TransferFeeAmount.withheld_amount ≥ MIN_CLAIM (default 0.001 stacSOL).
  *   2. WithdrawWithheldTokensFromAccounts → our manager ATA, in chunks.
- *   3. Split the swept balance:
- *        a. Liqd-to-SOL leg — SPLIT_LIQD_BPS of it is redeemed to SOL via the
- *           pool's WithdrawSol (at NAV) with the lamports sent straight to the
- *           LIQD_DESTINATION PDA.
- *        b. Burn leg — the remainder is BurnChecked via Token-2022, shrinking
- *           mint.supply and pushing NAV up (the stacSOL "pitch").
- *      With the default SPLIT_LIQD_BPS=5000 and a 13.8% fee that's 6.9% liqd
- *      to the PDA + 6.9% burned for NAV.
+ *   3. BurnChecked everything sitting in our manager ATA via the Token-2022
+ *      program.
  *   4. Run the SPL stake pool's update flow
  *      (UpdateValidatorListBalance + UpdateStakePoolBalance + Cleanup) to
  *      reconcile pool.pool_token_supply with the new mint.supply, so the
  *      rate gain materializes in redemption math immediately.
  *
- * Requires: a keypair JSON holding the manager authority (the same pubkey
- * configured as withdraw-withheld authority on the mint AND owner of the
- * destination ATA).
+ * Without step 4, mint.supply drops but the program's pool_token_supply
+ * lags — WithdrawSol would still pay out at the old, lower rate until the
+ * next epoch's natural sync. With step 4, the rate is live every cycle.
+ *
+ * Requires: a keypair JSON file holding the manager authority (the same
+ * pubkey configured as withdraw-withheld authority on the mint AND owner
+ * of the destination ATA).
  *
  * Usage:
- *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
- *   MINT=<fork mint>  POOL=<fork pool>  \
- *   LIQD_DESTINATION=<your PDA>         \
- *   KEYPAIR=./manager.json              \
+ *   RPC_URL="https://your-rpc/key"  \
+ *   KEYPAIR=./manager.json          \
  *   bun run scripts/burn-loop.ts
  *
  *   # or pass the key directly (handy for Railway/Vercel/etc):
- *   KEYPAIR_JSON="$(cat manager.json)" ... bun run scripts/burn-loop.ts
+ *   RPC_URL="https://your-rpc/key"  \
+ *   KEYPAIR_JSON="$(cat manager.json)" \
+ *   bun run scripts/burn-loop.ts
  */
 
 import {
@@ -45,30 +43,11 @@ import {
 import fs from 'node:fs'
 
 // ------------------------------------------------------------------- config
-// Fork addresses come from env (MINT / POOL), falling back to the original
-// stacSOL deployment so this script keeps working unchanged on the original.
-const MINT = new PublicKey(
-  process.env.MINT ?? '6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f',
-)
+const MINT = new PublicKey('6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f')
 const TOKEN_2022 = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
 const ATA_PROGRAM = new PublicKey('ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL')
 const POOL_PROGRAM = new PublicKey('SP12tWFxD9oJsVWNavTTBZvMbA6gkAmxtVgxdqvyvhY')
-const POOL = new PublicKey(
-  process.env.POOL ?? 'E6oqvrLKexQwFJyCnQ8ewx8xt9tQo7uezat24f5Qixqb',
-)
-
-// ---- Fork fee split -------------------------------------------------------
-// Of every harvest, SPLIT_LIQD_BPS goes to the "liqd to SOL → PDA" leg and the
-// remainder is burned for NAV (the stacSOL "pitch"). Default 5000 = 50/50:
-// with a 13.8% transfer fee that's 6.9% burned + 6.9% redeemed to SOL.
-const SPLIT_LIQD_BPS = BigInt(process.env.SPLIT_LIQD_BPS ?? '5000')
-// Destination the SOL half is sent to (the arbitrary PDA you provide). The
-// pool's WithdrawSol redeems stacSOL → SOL at NAV and credits this account
-// directly. Required to run the split; if unset the loop burns 100% (original
-// stacSOL behavior) and logs a warning.
-const LIQD_DESTINATION = process.env.LIQD_DESTINATION
-  ? new PublicKey(process.env.LIQD_DESTINATION)
-  : null
+const POOL = new PublicKey('E6oqvrLKexQwFJyCnQ8ewx8xt9tQo7uezat24f5Qixqb')
 const SYSVAR_CLOCK = new PublicKey('SysvarC1ock11111111111111111111111111111111')
 const SYSVAR_STAKE_HISTORY = new PublicKey('SysvarStakeHistory1111111111111111111111111')
 const STAKE_PROGRAM = new PublicKey('Stake11111111111111111111111111111111111111')
@@ -82,20 +61,65 @@ const MIN_CLAIM = BigInt(Math.floor(MIN_CLAIM_TOKENS * 10 ** DECIMALS))
 const TICK_MS = Number(process.env.BURN_LOOP_TICK_MS ?? 5 * 60 * 1000)
 const CHUNK = 20 // source accounts per WithdrawWithheld tx
 
-const RPC_URL =
-  process.env.RPC_URL ??
-  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+const RPC_URL = process.env.RPC_URL
+if (!RPC_URL) {
+  throw new Error(
+    'set RPC_URL env var (any Solana mainnet RPC with reasonable rate limits)',
+  )
+}
 
-// /api/manager-state — base URL + shared secret for the optional burn-tick
-// telemetry feed. If unset, reporting silently no-ops.
+// /api/manager-state — base URL + shared secret for the bait-cost counter.
+// If unset, the recovery step silently no-ops (current burn-loop behavior).
 const MANAGER_STATE_URL =
   process.env.MANAGER_STATE_URL ?? 'https://stacsol.app/api/manager-state'
 const MANAGER_STATE_SECRET = process.env.MANAGER_STATE_SECRET
 
+interface ManagerState {
+  outstandingBaitCostLamports: string
+  lifetimeBaitCostLamports: string
+  lifetimeBaitRecoveredLamports: string
+  lifetimeBaitCycles: number
+  lifetimeRecoveryCycles: number
+}
+
+async function fetchManagerState(): Promise<ManagerState | null> {
+  try {
+    const r = await fetch(MANAGER_STATE_URL, { signal: AbortSignal.timeout(10_000) })
+    if (!r.ok) {
+      log(`manager-state GET ${r.status}`)
+      return null
+    }
+    return (await r.json()) as ManagerState
+  } catch (e) {
+    log(`manager-state GET error: ${(e as Error).message}`)
+    return null
+  }
+}
+
+async function reportRecovery(lamports: bigint): Promise<void> {
+  if (!MANAGER_STATE_SECRET) return
+  try {
+    const r = await fetch(MANAGER_STATE_URL, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-manager-secret': MANAGER_STATE_SECRET,
+      },
+      body: JSON.stringify({ kind: 'recover', lamports: lamports.toString() }),
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!r.ok) {
+      const txt = await r.text().catch(() => '')
+      log(`manager-state POST recover ${r.status}: ${txt.slice(0, 200)}`)
+    }
+  } catch (e) {
+    log(`manager-state POST recover error: ${(e as Error).message}`)
+  }
+}
+
 interface BurnReport {
   harvestedAtom: bigint
-  liqdAtom: bigint
-  liqdLamports: bigint
+  recoveredAtom: bigint
   burnedAtom: bigint
   navBefore?: number
   navAfter?: number
@@ -106,7 +130,7 @@ async function reportBurnTick(rep: BurnReport): Promise<void> {
   if (!MANAGER_STATE_SECRET) return
   // Skip the post when nothing material happened — avoids spamming rows
   // for idle ticks.
-  if (rep.harvestedAtom === 0n && rep.burnedAtom === 0n && rep.liqdAtom === 0n) return
+  if (rep.harvestedAtom === 0n && rep.burnedAtom === 0n && rep.recoveredAtom === 0n) return
   try {
     const r = await fetch(MANAGER_STATE_URL, {
       method: 'POST',
@@ -117,8 +141,7 @@ async function reportBurnTick(rep: BurnReport): Promise<void> {
       body: JSON.stringify({
         kind: 'burn',
         harvestedAtom: rep.harvestedAtom.toString(),
-        liqdAtom: rep.liqdAtom.toString(),
-        liqdLamports: rep.liqdLamports.toString(),
+        recoveredAtom: rep.recoveredAtom.toString(),
         burnedAtom: rep.burnedAtom.toString(),
         navBefore: rep.navBefore ?? null,
         navAfter: rep.navAfter ?? null,
@@ -379,14 +402,11 @@ function ixCleanupRemovedValidatorEntries(validatorList: PublicKey) {
 }
 
 // SPL stake pool — WithdrawSol (variant 16). Data: [16, pool_tokens: u64].
-// Redeems `poolTokens` stacSOL from `burner`'s ATA into SOL at the live NAV,
-// crediting the lamports to `recipient`. The fork's "liqd to SOL" leg points
-// `recipient` straight at the destination PDA so the SOL lands there in one
-// instruction (no separate transfer, no rounding mismatch). This also burns
-// the pool tokens, shrinking supply just like the NAV burn.
+// Used by the recovery step to convert swept withholding stacSOL back into
+// SOL credited to the manager wallet — paying back the outstanding bait cost
+// before the remaining ATA balance is burned for NAV.
 function ixWithdrawSol(
   burner: PublicKey,
-  recipient: PublicKey,
   poolTokens: bigint,
   reserveStake: PublicKey,
   managerFeeAccount: PublicKey,
@@ -404,7 +424,7 @@ function ixWithdrawSol(
       { pubkey: burner, isSigner: true, isWritable: false }, // user_transfer_authority
       { pubkey: burnerAta, isSigner: false, isWritable: true },
       { pubkey: reserveStake, isSigner: false, isWritable: true },
-      { pubkey: recipient, isSigner: false, isWritable: true }, // recipient (lamports)
+      { pubkey: burner, isSigner: false, isWritable: true }, // recipient (lamports)
       { pubkey: managerFeeAccount, isSigner: false, isWritable: true },
       { pubkey: MINT, isSigner: false, isWritable: true },
       { pubkey: SYSVAR_CLOCK, isSigner: false, isWritable: false },
@@ -427,7 +447,51 @@ async function fetchPoolRefs() {
     managerFeeAccount: new PublicKey(d.subarray(194, 226)),
     poolTotalLamports: d.readBigUInt64LE(258),
     poolTokenSupply: d.readBigUInt64LE(266),
+    lastUpdateEpoch: d.readBigUInt64LE(274),
   }
+}
+
+/**
+ * Fire the SPL stake-pool update flow:
+ *   UpdateValidatorListBalance → UpdateStakePoolBalance → Cleanup
+ *
+ * `UpdateStakePoolBalance` is what resets `last_update_epoch`. Without it,
+ * `DepositSol` / `WithdrawSol` fail with custom error 0x11
+ * (StakeListAndPoolOutOfDate) for the entire epoch. The chain-level
+ * requirement is exactly once per epoch, so we no-op early if the pool
+ * is already up to date — avoids 288 wasted update txs/day at 5-min
+ * tick. Bypass with `force=true` after a burn (rate change only
+ * materialises in the redemption math after a fresh UpdateStakePoolBalance,
+ * even within the same epoch). Returns the post-update rate (or null if
+ * the crank was skipped).
+ */
+async function crankPool(force: boolean): Promise<number | null> {
+  const refs = await fetchPoolRefs()
+  const { epoch: currentEpoch } = await withRetry('getEpochInfo', () =>
+    conn.getEpochInfo('confirmed'),
+  )
+  const lastUpdate = Number(refs.lastUpdateEpoch)
+  if (!force && lastUpdate >= currentEpoch) {
+    log(`pool already updated this epoch (${lastUpdate} ≥ ${currentEpoch}) — skip crank`)
+    return null
+  }
+  log(
+    `cranking pool: lastUpdateEpoch=${lastUpdate} currentEpoch=${currentEpoch}${force ? ' (forced after burn)' : ''}`,
+  )
+  await sendIxs(
+    [
+      ixUpdateValidatorListBalance(refs.validatorList, refs.reserveStake),
+      ixUpdateStakePoolBalance(refs.validatorList, refs.reserveStake, refs.managerFeeAccount),
+      ixCleanupRemovedValidatorEntries(refs.validatorList),
+    ],
+    'update-pool-balance',
+  )
+  const refsAfter = await fetchPoolRefs()
+  const rate = Number(refsAfter.poolTotalLamports) / Number(refsAfter.poolTokenSupply)
+  log(
+    `pool rate now: ${rate.toFixed(6)} SOL/stacSOL (epoch ${refsAfter.lastUpdateEpoch})`,
+  )
+  return rate
 }
 
 // ----------------------------------------------------------- tx send
@@ -518,9 +582,6 @@ function log(msg: string) {
   console.log(`[${t}] ${msg}`)
 }
 
-// One-shot guard so the manager-fee-account mismatch warning logs at most once.
-let warnedFeeAcct = false
-
 // ----------------------------------------------------------- tick
 async function tick() {
   const ata = deriveAta(authority.publicKey)
@@ -529,8 +590,7 @@ async function tick() {
   // Telemetry — populated through the tick + posted at the end so the
   // dashboard can attribute NAV growth to source.
   let harvestedAtom = 0n
-  let liqdAtom = 0n // stacSOL redeemed to SOL and sent to the PDA this tick
-  let liqdLamports = 0n // SOL (lamports) the PDA received this tick
+  let recoveredAtom = 0n
   let burnedAtom = 0n
   let candidateCount = 0
   let navBefore: number | undefined
@@ -539,20 +599,6 @@ async function tick() {
     const r0 = await fetchPoolRefs()
     if (r0.poolTokenSupply > 0n)
       navBefore = Number(r0.poolTotalLamports) / Number(r0.poolTokenSupply)
-    // The pool's deposit fee (the "mint" fee — also 13.8% on this fork) mints
-    // stacSOL into manager_fee_account. spl-stake-pool create-pool sets that to
-    // the manager's ATA — i.e. THIS ata — so deposit-fee accrual lands in the
-    // same account we sweep and rides the identical 50/50 burn+liqd split as
-    // the transfer fee. Warn (once) if the pool was created with a different
-    // fee account, since then deposit fees would NOT be auto-split here.
-    if (!warnedFeeAcct && !r0.managerFeeAccount.equals(ata)) {
-      warnedFeeAcct = true
-      log(
-        `WARNING manager_fee_account ${r0.managerFeeAccount.toBase58()} != manager ATA — ` +
-          `deposit (mint) fees accrue there and will NOT be split by this loop. ` +
-          `Re-create the pool with the manager ATA as fee account, or sweep it manually.`,
-      )
-    }
   } catch {
     /* non-fatal */
   }
@@ -589,62 +635,58 @@ async function tick() {
     }
   }
 
-  // 3. Fork fee split. Everything swept into our ATA is the harvested 13.8%.
-  //    Split it: SPLIT_LIQD_BPS gets redeemed to SOL (WithdrawSol at NAV) and
-  //    sent straight to the destination PDA ("liqd to SOL"); the rest is burned
-  //    for NAV (the stacSOL "pitch"). Default 5000 bps → 6.9% liqd + 6.9% burn.
+  // 3a. Recovery step: if bait-loop has logged outstanding cost, withdraw
+  //     enough stacSOL via WithdrawSol to recoup it before the burn. Manager
+  //     receives SOL back into their wallet. Cost counter decrements by the
+  //     SOL actually received. Skips if cost == 0 or counter API is down.
   const balanceAfterSweep = await readBalance(ata)
   log(`ata balance after harvest: ${fmtTok(balanceAfterSweep)} stacSOL`)
   let burnedAny = false
 
   if (balanceAfterSweep > 0n) {
-    // 3a. Liqd-to-SOL leg → PDA. Skipped (and folded into the burn) if no
-    //     destination is configured, which reproduces original 100%-burn. On
-    //     failure we leave the share in the ATA so 3b burns it rather than
-    //     losing it.
-    const liqdShare = LIQD_DESTINATION
-      ? (balanceAfterSweep * SPLIT_LIQD_BPS) / 10_000n
-      : 0n
-    if (LIQD_DESTINATION && liqdShare > 0n) {
+    const state = await fetchManagerState()
+    const outstandingLamports = state ? BigInt(state.outstandingBaitCostLamports) : 0n
+    if (outstandingLamports > 0n) {
       try {
         const refs = await fetchPoolRefs()
+        // stacSOL needed to redeem outstandingLamports of SOL at current NAV:
+        // X * total_lamports / pool_token_supply = outstandingLamports
+        // → X = outstandingLamports * pool_token_supply / total_lamports
         const totalLam = refs.poolTotalLamports
         const supply = refs.poolTokenSupply
-        // Project the SOL the PDA will receive: share * NAV.
-        const projectedLamports =
-          supply > 0n ? (liqdShare * totalLam) / supply : 0n
-        log(
-          `liqd: redeeming ${fmtTok(liqdShare)} stacSOL → ~${(Number(projectedLamports) / 1e9).toFixed(6)} SOL ` +
-            `to ${LIQD_DESTINATION.toBase58()}`,
-        )
-        await sendIxs(
-          [
-            ixWithdrawSol(
-              authority.publicKey,
-              LIQD_DESTINATION,
-              liqdShare,
-              refs.reserveStake,
-              refs.managerFeeAccount,
-            ),
-          ],
-          `liqd-withdraw ${fmtTok(liqdShare)} stacSOL → PDA`,
-        )
-        burnedAny = true
-        liqdAtom = liqdShare
-        liqdLamports = projectedLamports
+        if (totalLam > 0n && supply > 0n) {
+          const stacNeeded = (outstandingLamports * supply) / totalLam
+          const stacToBurn = stacNeeded > balanceAfterSweep ? balanceAfterSweep : stacNeeded
+          if (stacToBurn > 0n) {
+            // Project lamports we'll actually receive for stacToBurn.
+            const projectedLamports = (stacToBurn * totalLam) / supply
+            log(
+              `recovery: outstanding=${(Number(outstandingLamports) / 1e9).toFixed(6)} SOL, ` +
+                `withdrawing ${fmtTok(stacToBurn)} stacSOL (~${(Number(projectedLamports) / 1e9).toFixed(6)} SOL)`,
+            )
+            await sendIxs(
+              [ixWithdrawSol(authority.publicKey, stacToBurn, refs.reserveStake, refs.managerFeeAccount)],
+              `recovery-withdraw ${fmtTok(stacToBurn)} stacSOL`,
+            )
+            // After WithdrawSol the pool's accounting is one step behind too —
+            // fold it into the update-pool step below by flagging that something
+            // changed the supply.
+            burnedAny = true
+            recoveredAtom = stacToBurn
+            await reportRecovery(projectedLamports)
+          }
+        }
       } catch (e) {
-        log(`liqd error: ${(e as Error).message} — burning this share instead`)
+        log(`recovery error: ${(e as Error).message}`)
       }
-    } else if (!LIQD_DESTINATION) {
-      log('LIQD_DESTINATION unset — burning 100% (no split this tick)')
     }
   }
 
-  // 3b. Burn whatever stacSOL is still in our ATA after the liqd leg — that's
-  //     the burn share (plus any liqd share that failed to redeem above).
+  // 3b. Burn whatever stacSOL is still in our ATA after recovery. That's the
+  //     excess withholding that exceeds the bait debt — pure NAV burn.
   const balance = await readBalance(ata)
   if (balance > 0n) {
-    log(`ata balance after liqd: ${fmtTok(balance)} stacSOL — burning for NAV`)
+    log(`ata balance after recovery: ${fmtTok(balance)} stacSOL — burning excess`)
     try {
       await sendIxs([ixBurnChecked(ata, balance)], `burn ${fmtTok(balance)} stacSOL`)
       burnedAny = true
@@ -653,30 +695,26 @@ async function tick() {
       log(`burn error: ${(e as Error).message}`)
     }
   } else if (burnedAny) {
-    log(`ata empty after liqd — nothing left to burn this tick`)
+    log(`ata empty after recovery — no excess to burn this tick`)
   }
   const burned = burnedAny
 
-  // 4. Sync the pool's accounting so the rate gain materializes for redeemers.
-  //    Skip if we didn't burn anything this tick (no drift to clear).
-  if (burned) {
-    try {
-      const refs = await fetchPoolRefs()
-      await sendIxs(
-        [
-          ixUpdateValidatorListBalance(refs.validatorList, refs.reserveStake),
-          ixUpdateStakePoolBalance(refs.validatorList, refs.reserveStake, refs.managerFeeAccount),
-          ixCleanupRemovedValidatorEntries(refs.validatorList),
-        ],
-        'update-pool-balance',
-      )
-      const refsAfter = await fetchPoolRefs()
-      const rate = Number(refsAfter.poolTotalLamports) / Number(refsAfter.poolTokenSupply)
-      navAfter = rate
-      log(`pool rate now: ${rate.toFixed(6)} SOL/stacSOL`)
-    } catch (e) {
-      log(`update-pool error: ${(e as Error).message}`)
-    }
+  // 4. Sync the pool's accounting. Two reasons to crank:
+  //    a. We just burned (or did a recovery withdraw) → force a fresh
+  //       UpdateStakePoolBalance so the rate gain materialises in
+  //       redemption math immediately. Without it the program still pays
+  //       out at the pre-burn ratio until the next natural epoch sync.
+  //    b. Idle tick → ensure the pool's `last_update_epoch` matches the
+  //       current cluster epoch. SPL stake-pool rejects DepositSol /
+  //       WithdrawSol with 0x11 (StakeListAndPoolOutOfDate) for the
+  //       entire epoch otherwise, even with zero fee activity to harvest.
+  //       crankPool() no-ops when already current so we don't pay 288
+  //       wasted update txs/day at 5-min tick.
+  try {
+    const rate = await crankPool(/* force= */ burned)
+    if (rate != null) navAfter = rate
+  } catch (e) {
+    log(`update-pool error: ${(e as Error).message}`)
   }
 
   // Post tick summary so the dashboard can chart burn velocity + attribute
@@ -684,8 +722,7 @@ async function tick() {
   // inside reportBurnTick.
   await reportBurnTick({
     harvestedAtom,
-    liqdAtom,
-    liqdLamports,
+    recoveredAtom,
     burnedAtom,
     navBefore,
     navAfter,
@@ -700,13 +737,6 @@ async function main() {
     ? 'env:KEYPAIR_JSON'
     : `file:${process.env.KEYPAIR}`
   log(`rpc=${RPC_URL.split('?')[0]}? · keypair=${keypairSource} · authority=${authority.publicKey.toBase58()}`)
-  log(`mint=${MINT.toBase58()} · pool=${POOL.toBase58()}`)
-  if (LIQD_DESTINATION) {
-    const liqdPct = Number(SPLIT_LIQD_BPS) / 100
-    log(`fee split · liqd ${liqdPct}% → ${LIQD_DESTINATION.toBase58()} · burn ${100 - liqdPct}% → NAV`)
-  } else {
-    log('fee split · LIQD_DESTINATION unset → burning 100% for NAV (no split)')
-  }
   // run immediately, then every TICK_MS
   while (true) {
     try {

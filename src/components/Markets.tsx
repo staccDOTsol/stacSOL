@@ -33,7 +33,7 @@ export function Markets() {
         are thin secondary AMMs — don&apos;t trade them.{' '}
         <span className="text-[var(--color-ember)] font-black">Cross-pairs</span>{' '}
         are stacSOL paired against other thystaccfloweth tokens — every swap
-        in those feeds the 13.8% transfer-fee burn. They&apos;re the engine.
+        in those feeds the 6.9% transfer-fee burn. They&apos;re the engine.
       </p>
 
       {error && (

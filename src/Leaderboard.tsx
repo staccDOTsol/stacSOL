@@ -15,6 +15,8 @@ import { useWallet } from '@solana/wallet-adapter-react'
 import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { fmtAmount, shortPk } from './lib/format'
 import { WalletIdentity, DoxxToggle } from './components/walletDoxx'
+import EditorialNav from './components/EditorialNav'
+import WalletPill from './components/WalletPill'
 
 const REFRESH_MS = 60_000
 const SEARCH_DEBOUNCE_MS = 250
@@ -83,6 +85,9 @@ interface HoldersLeaderboardResponse {
     paidUnderwaterCount?: number
   }
   rate: number | null
+  /** USD price of 1 SOL at response time (CoinGecko-sourced server-side).
+   *  Used to render volume metrics in $. null if the price fetch failed. */
+  solUsd?: number | null
   asOf: number
   nextCursor: string | null
   my: HolderRow | null
@@ -130,7 +135,7 @@ function hasTransferredIn(row: HolderRow): boolean {
 //
 // IMPORTANT — this used to return `pnlSol + earnedSol`. That double-counted
 // referral / manager-fee credits, because the ingester's `pnl_sol` formula
-// already values them via `total_stac_atom × NAV × 0.862` (for still-held
+// already values them via `total_stac_atom × NAV × 0.931` (for still-held
 // kickbacks) and via `gross_sol_out_lamports` (for burned kickbacks). Adding
 // `earned_sol` again inflated the headline by exactly the SOL value of
 // every referral kickback the wallet had received — making the leaderboard
@@ -189,14 +194,14 @@ const COLUMNS: ColumnSpec[] = [
     key: 'gross_sol_in',
     label: 'cost basis',
     align: 'right',
-    hint: 'Lifetime SOL ever paid to the mint flow on this wallet. Not netted against burns.',
+    hint: 'Net SOL paid into the position you currently hold: gross_sol_in − gross_sol_out. Equals stacSOL_held × break-even NAV. (Sorted by lifetime gross_sol_in for stability across mint→burn→mint cycles.)',
   },
   {
     key: 'pnl_sol',
     label: 'P&L SOL',
     align: 'right',
     hint:
-      'P&L in SOL: (held × 0.862 × NAV) + lifetime burn payouts − lifetime SOL paid in. This is what a wallet would actually realize if it burned right now — referral / manager-fee kickbacks are already in `held` (they were paid as stacSOL into the ATA), so they show up here without needing to be added separately.',
+      'P&L in SOL: (held × 0.931 × NAV) + lifetime burn payouts − lifetime SOL paid in. This is what a wallet would actually realize if it burned right now — referral / manager-fee kickbacks are already in `held` (they were paid as stacSOL into the ATA), so they show up here without needing to be added separately.',
   },
   {
     key: 'pnl_pct',
@@ -221,6 +226,8 @@ const COLUMNS: ColumnSpec[] = [
   },
 ]
 
+// 6dp for the same reason fmtSolFloat / fmtAmount were bumped: sub-0.0001
+// SOL net values previously read as `0.0000` on the row's net-SOL cell.
 const fmtSolNum = (lamports: bigint | string | number) => {
   const big =
     typeof lamports === 'bigint'
@@ -229,15 +236,19 @@ const fmtSolNum = (lamports: bigint | string | number) => {
       ? BigInt(lamports || '0')
       : BigInt(Math.round(lamports))
   return (Number(big) / LAMPORTS_PER_SOL).toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 6,
   })
 }
 
+// 6 decimals so sub-0.0001 SOL earnings render as e.g. `0.000123` rather than
+// collapsing to `0.0000`. Matches the redemption-rate precision (6dp) and the
+// `fmt(x, 6)` pattern used for earned-SOL on the App page. Keep the duplicate
+// in components/Leaderboard.tsx in sync.
 const fmtSolFloat = (sol: number) =>
   sol.toLocaleString(undefined, {
-    maximumFractionDigits: 4,
-    minimumFractionDigits: 4,
+    maximumFractionDigits: 6,
+    minimumFractionDigits: 6,
   })
 
 function fmtRel(ms: number): string {
@@ -252,6 +263,14 @@ function fmtRel(ms: number): string {
 export default function HoldersLeaderboard() {
   const { publicKey } = useWallet()
   const myPk = publicKey?.toBase58() ?? null
+
+  // Opt this surface into the editorial design (ivory/jade body, sticky nav).
+  // The page's Tailwind utilities reference --color-bg / --color-hot etc.,
+  // which get remapped onto editorial tokens by index.css.
+  useEffect(() => {
+    document.body.setAttribute('data-design', 'editorial')
+    return () => document.body.removeAttribute('data-design')
+  }, [])
 
   const [rows, setRows] = useState<HolderRow[]>([])
   const [meta, setMeta] = useState<HoldersLeaderboardResponse | null>(null)
@@ -417,12 +436,12 @@ export default function HoldersLeaderboard() {
     const sumEarnedStac =
       Number(BigInt(meta.totals.sumEarnedAtom || '0')) / 1e9
     // Real economic state: what the protocol would pay out if every holder
-    // burned right now. burn_net_per_token = balance × (1 - 0.138) × NAV.
+    // burned right now. burn_net_per_token = balance × (1 - 0.069) × NAV.
     const rate = meta.rate ?? 0
-    const burnValueIfAllRedeem = totalStacUi * 0.862 * rate
+    const burnValueIfAllRedeem = totalStacUi * 0.931 * rate
     // Derive sumGrossOut from the identity:
     //   sumPnlSol = sumBurnNetSol + sumGrossOut − sumGrossIn
-    // where sumBurnNetSol = totalStacUi × 0.862 × rate (= burnValueIfAllRedeem).
+    // where sumBurnNetSol = totalStacUi × 0.931 × rate (= burnValueIfAllRedeem).
     // This avoids needing a new API field.
     const sumOut = meta.totals.sumPnlSol + sumIn - burnValueIfAllRedeem
     return {
@@ -435,17 +454,11 @@ export default function HoldersLeaderboard() {
   }, [meta])
 
   return (
-    <div className="max-w-[1080px] mx-auto px-4 py-6">
-      <div className="mb-4 flex items-center gap-3">
-        <a
-          href="/"
-          className="text-[10px] uppercase tracking-[3px] text-[var(--color-dim)] hover:text-[var(--color-hot)] no-underline"
-        >
-          ← stacSOL
-        </a>
-      </div>
+    <>
+      <EditorialNav pathname="/leaderboard" ctaSlot={<WalletPill />} />
+      <div className="max-w-[1080px] mx-auto px-4 py-6">
 
-      <h1 className="m-0 mb-2 text-5xl font-black tracking-[-0.05em] text-[var(--color-hot)] [text-shadow:0_0_18px_rgba(255,34,0,0.7),0_0_48px_rgba(255,34,0,0.35),0_0_2px_rgba(255,34,0,1)] [animation:flicker_5s_ease-in-out_infinite]">
+      <h1 className="m-0 mb-2 text-5xl font-black tracking-[-0.05em] text-[var(--color-hot)]">
         holders leaderboard
       </h1>
       <div className="mb-6 flex items-center gap-3">
@@ -497,7 +510,7 @@ export default function HoldersLeaderboard() {
             <span className="ml-0.5 cursor-help opacity-60">ⓘ</span>
           </span>
           {meta.rate != null && (
-            <span title="What the protocol would pay out IF every holder burned every stacSOL right now, at current NAV, after the 13.8% Token-2022 transfer fee. Compare to on-chain backing (Pool card on the home page) to see solvency.">
+            <span title="What the protocol would pay out IF every holder burned every stacSOL right now, at current NAV, after the 6.9% Token-2022 transfer fee. Compare to on-chain backing (Pool card on the home page) to see solvency.">
               <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
                 {stickyTotal.burnValueIfAllRedeem.toLocaleString(undefined, {
                   maximumFractionDigits: 2,
@@ -559,7 +572,7 @@ export default function HoldersLeaderboard() {
           {meta.totals.sumEarnedSol > 0 && (
             <span
               className="opacity-60"
-              title="Referral attribution: SOL value (at current NAV) of stacSOL ever credited via the 50/50 referral + manager-fee split of the 13.8% deposit fee. This is a SUBSET of the held supply, not additional value. Counting it would double-count what's already in 'burn value' above."
+              title="Referral attribution: SOL value (at current NAV) of stacSOL ever credited via the 50/50 referral + manager-fee split of the 6.9% deposit fee. This is a SUBSET of the held supply, not additional value. Counting it would double-count what's already in 'burn value' above."
             >
               <span className="font-mono normal-case tracking-normal">
                 {fmtSolFloat(meta.totals.sumEarnedSol)}
@@ -874,7 +887,7 @@ export default function HoldersLeaderboard() {
         <span className="font-mono">SP12…vhY</span>). Balances cover both
         the wallet's stacSOL ATA and its HawkFi userPda ATA. P&amp;L is{' '}
         <code className="text-[var(--color-fg)]">
-          held × NAV × 0.862 + grossOut − grossIn
+          held × NAV × 0.931 + grossOut − grossIn
         </code>{' '}
         — realized burns plus the current burn value of held stacSOL, minus
         SOL ever deposited. The percentage is ROI on{' '}
@@ -886,7 +899,7 @@ export default function HoldersLeaderboard() {
           earned
         </span>{' '}
         column is the deposit-fee leg credited to referrers / manager (50/50
-        split, 6.9% of mint output each). Wallets whose stacSOL came
+        split, 3.45% of mint output each). Wallets whose stacSOL came
         purely from earnings show a{' '}
         <span className="text-[var(--color-green)] uppercase tracking-[2px] text-[9px]">
           earned
@@ -908,6 +921,7 @@ export default function HoldersLeaderboard() {
         organic depositors only.
       </p>
     </div>
+    </>
   )
 }
 
@@ -1051,7 +1065,14 @@ function HolderRowDesktop({
             —
           </span>
         ) : (
-          fmtSolNum(row.grossSolIn)
+          (() => {
+            // NET cost basis = grossSolIn − grossSolOut. See mobile row
+            // for the rationale + perceived-double-count fix.
+            const grossIn = BigInt(row.grossSolIn || '0')
+            const grossOut = BigInt(row.grossSolOut || '0')
+            const net = grossIn > grossOut ? grossIn - grossOut : 0n
+            return fmtSolNum(net.toString())
+          })()
         )}
       </td>
       <PnLCells row={row} />
@@ -1197,11 +1218,25 @@ function HolderCardMobile({
           )}
         </div>
         <div>
-          <div className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]">
+          <div
+            className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]"
+            title="Cost basis of the currently-held position: gross_sol_in − gross_sol_out. This equals stacSOL_held × break-even NAV, and is what you'd need NAV to recover for a wash exit."
+          >
             cost basis
           </div>
           <div className="font-mono text-[var(--color-dim)]">
-            {pure ? '—' : `${fmtSolNum(row.grossSolIn)} SOL`}
+            {pure
+              ? '—'
+              : (() => {
+                  // NET cost basis = gross_sol_in − gross_sol_out.
+                  // Was rendering raw gross_sol_in which looked like
+                  // double-counting after a mint→burn→mint cycle ('cost
+                  // basis 92 SOL on a 27-stacSOL bag with NAV 1.79').
+                  const grossIn = BigInt(row.grossSolIn || '0')
+                  const grossOut = BigInt(row.grossSolOut || '0')
+                  const net = grossIn > grossOut ? grossIn - grossOut : 0n
+                  return `${fmtSolNum(net.toString())} SOL`
+                })()}
           </div>
         </div>
         <div>

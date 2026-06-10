@@ -15,12 +15,10 @@ const KEYPAIR_PATH =
   process.env.HATCH_LAUNCHER_KEYPAIR ??
   `${homedir()}/.config/stacsol/hatch-launcher.json`
 
-const RPC_URL =
-  process.env.RPC_URL ??
-  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
+const RPC_URL = process.env.RPC_URL
 const MINT = process.env.HATCH_MINT
-if (!MINT) {
-  console.error('set HATCH_MINT env var')
+if (!RPC_URL || !MINT) {
+  console.error('set RPC_URL and HATCH_MINT env vars')
   process.exit(1)
 }
 
