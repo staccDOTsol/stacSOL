@@ -26,12 +26,12 @@
  *     systemd, etc.) avoids the wedge entirely.
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key"  \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
  *   KEYPAIR=./manager.json          \
  *   bun run scripts/invest-loop.ts
  *
  *   # or pass key inline (Railway / Vercel-style secrets):
- *   RPC_URL="https://your-rpc/key"  \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
  *   KEYPAIR_JSON="$(cat manager.json)" \
  *   bun run scripts/invest-loop.ts
  *

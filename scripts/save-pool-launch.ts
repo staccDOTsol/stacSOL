@@ -134,7 +134,7 @@ async function main() {
   const marketOverride = arg('--market')
   const skip = (arg('--skip') ?? '').split(',').filter(Boolean)
 
-  const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
+  const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
   const wallet = loadWallet()
   const owner = wallet.publicKey
 

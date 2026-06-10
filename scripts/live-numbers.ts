@@ -4,15 +4,16 @@
  * timestamp, age, realized gain, implied APR.
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key" \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
  *     bun run scripts/live-numbers.ts
  */
 
 import { Connection, PublicKey } from '@solana/web3.js'
 
 async function main() {
-  const rpc = process.env.RPC_URL
-  if (!rpc) throw new Error('set RPC_URL env var')
+  const rpc =
+    process.env.RPC_URL ??
+    'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
   const conn = new Connection(rpc, 'confirmed')
   const POOL = new PublicKey('E6oqvrLKexQwFJyCnQ8ewx8xt9tQo7uezat24f5Qixqb')
   const acc = await conn.getAccountInfo(POOL, 'processed')

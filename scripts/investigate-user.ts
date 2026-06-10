@@ -5,7 +5,7 @@
  * P&L. Useful for support DMs ("why am I at X SOL after Y deposits").
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key" \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
  *     bun run scripts/investigate-user.ts <wallet-pubkey>
  */
 
@@ -15,8 +15,9 @@ import {
   ASSOCIATED_TOKEN_PROGRAM_ID,
 } from '@solana/spl-token'
 
-const RPC = process.env.RPC_URL
-if (!RPC) throw new Error('set RPC_URL env var')
+const RPC =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 
 const userArg = process.argv[2]
 if (!userArg) {

@@ -27,7 +27,7 @@ function rpcUrl(): string {
   return (
     process.env.RPC_URL ||
     process.env.VITE_RPC_URL ||
-    'https://api.mainnet-beta.solana.com'
+    'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
   )
 }
 
