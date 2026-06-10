@@ -26,12 +26,12 @@
  *     systemd, etc.) avoids the wedge entirely.
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key"  \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
  *   KEYPAIR=./manager.json          \
  *   bun run scripts/invest-loop.ts
  *
  *   # or pass key inline (Railway / Vercel-style secrets):
- *   RPC_URL="https://your-rpc/key"  \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34"  \
  *   KEYPAIR_JSON="$(cat manager.json)" \
  *   bun run scripts/invest-loop.ts
  *
@@ -59,11 +59,9 @@ import {
 import fs from 'node:fs'
 
 // -------------------------------------------------------------------- config
-const RPC_URL = process.env.RPC_URL
-if (!RPC_URL) {
-  console.error('missing RPC_URL')
-  process.exit(1)
-}
+const RPC_URL =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 const VAULT_ADDRESS =
   process.env.VAULT_ADDRESS ?? '7grPoQCXHgZwaBTNFcQjadWnSEP1zvb1EMtQPgTEE9sR'
 const TICK_MS = Number(process.env.INVEST_LOOP_TICK_MS ?? 5 * 60 * 1000)

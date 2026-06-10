@@ -5,14 +5,15 @@
  * Token-2022 mints.
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key" \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
  *     bun run scripts/check-mint-programs.ts
  */
 
 import { Connection, PublicKey } from '@solana/web3.js'
 
-const RPC = process.env.RPC_URL
-if (!RPC) throw new Error('set RPC_URL env var')
+const RPC =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 const TOKEN = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA')
 const TOKEN_2022 = new PublicKey('TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb')
 

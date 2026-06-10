@@ -120,13 +120,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const live = String(req.query.live ?? '') === 'true'
     let snap: NavSnapshot | null = null
     if (live) {
-      const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
+      const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
       snap = await fetchLiveNav(rpcUrl)
     } else {
       snap = await fetchLatestNavFromSnapshots()
       if (!snap) {
         // Fallback to live if postgres has no rows yet (cold start, fresh deploy).
-        const rpcUrl = process.env.RPC_URL || 'https://api.mainnet-beta.solana.com'
+        const rpcUrl = process.env.RPC_URL || 'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
         snap = await fetchLiveNav(rpcUrl)
       }
     }

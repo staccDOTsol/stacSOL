@@ -3,11 +3,11 @@
  * any keypair JSONs you keep locally (dev convenience, never bundled).
  *
  * Usage:
- *   RPC_URL="https://your-rpc/key" KEYS_DIR=./keys \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" KEYS_DIR=./keys \
  *     bun run scripts/check-wallets.ts
  *
  *   # or pass extra wallets as CLI args:
- *   RPC_URL="https://your-rpc/key" \
+ *   RPC_URL="https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34" \
  *     bun run scripts/check-wallets.ts SomePub… AnotherPub…
  */
 
@@ -15,8 +15,9 @@ import { Connection, PublicKey, Keypair, LAMPORTS_PER_SOL } from '@solana/web3.j
 import { readFileSync, readdirSync, existsSync } from 'fs'
 import { join } from 'path'
 
-const RPC = process.env.RPC_URL
-if (!RPC) throw new Error('set RPC_URL env var')
+const RPC =
+  process.env.RPC_URL ??
+  'https://mainnet.helius-rpc.com/?api-key=89a5704a-97ad-4c43-9be4-f04dc03a6b34'
 const KEYS_DIR = process.env.KEYS_DIR // optional — only if you keep local keypairs
 
 const STACSOL_MINT = new PublicKey('6K4xdfEk5rvySM496rxm4x8AgC9wVt7N4C7mFFpNAj5f')
