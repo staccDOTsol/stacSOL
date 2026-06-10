@@ -34,6 +34,10 @@
     { "source": "/baitscope", "destination": "/index.html" },
     { "source": "/baitscope/(.*)", "destination": "/index.html" },
     { "source": "/liqmonsta", "destination": "/index.html" },
-    { "source": "/liqmonsta/(.*)", "destination": "/index.html" }
+    { "source": "/liqmonsta/(.*)", "destination": "/index.html" },
+    { "source": "/landing", "destination": "/index.html" },
+    { "source": "/landing/(.*)", "destination": "/index.html" },
+    { "source": "/app", "destination": "/index.html" },
+    { "source": "/app/(.*)", "destination": "/index.html" }
   ]
 }

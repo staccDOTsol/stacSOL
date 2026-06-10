@@ -16,10 +16,9 @@ import './index.css'
 import { RPC_URL } from './lib/constants'
 import { ThemeToggle } from './components/ThemeToggle'
 
-// Route components are lazy-loaded so visiting / only ships the Landing
-// bundle, not the wallet-adapter / Solana web3 chunk. Critical for mobile
-// in-app browsers (Phantom, Trust) that OOM-crash on multi-MB JS payloads —
-// the marketing landing has zero wallet dependency.
+// Route components are lazy-loaded so each route only ships the chunks it
+// actually needs. Critical for mobile in-app browsers (Phantom, Trust)
+// that OOM-crash on multi-MB JS payloads.
 const Landing = lazy(() => import('./Landing.tsx'))
 const App = lazy(() => import('./App.tsx'))
 const Guide = lazy(() => import('./Guide.tsx'))
@@ -76,10 +75,9 @@ const isFaq = path === '/faq' || path.startsWith('/faq/')
 const isLeaderboard = path === '/leaderboard' || path.startsWith('/leaderboard/')
 const isBaitscope = path === '/baitscope' || path.startsWith('/baitscope/')
 const isLiqmonsta = path === '/liqmonsta' || path.startsWith('/liqmonsta/')
-// The dashboard (mint/burn/wrap/position) used to live at `/`. It now
-// lives at `/app` so `/` can serve the marketing landing without dragging
-// the wallet-adapter / Solana web3 chunk on first paint.
-const isApp = path === '/app' || path.startsWith('/app/')
+// The dashboard (mint/burn/wrap/position) lives at `/` (and keeps working
+// at `/app` for old links). The marketing landing moved to `/landing`.
+const isLanding = path === '/landing' || path.startsWith('/landing/')
 
 function RouteFallback() {
   return (
@@ -126,16 +124,16 @@ createRoot(document.getElementById('root')!).render(
         <Providers>
           <Liqmonsta />
         </Providers>
-      ) : isApp ? (
-        // The mint / burn / wrap / position dashboard. Wallet-adapter
-        // mounted here only — the marketing landing at `/` stays clean.
+      ) : isLanding ? (
+        // Marketing landing, parked at /landing. Pure static, no wallet
+        // provider (CTAs link out to / which mounts the providers).
+        <Landing />
+      ) : (
+        // Default `/` (and legacy `/app`) → the mint / burn / wrap /
+        // position dashboard.
         <Providers>
           <App />
         </Providers>
-      ) : (
-        // Default `/` → marketing landing. Pure static, no wallet provider
-        // (CTAs link out to /app which mounts the providers on demand).
-        <Landing />
       )}
     </Suspense>
   </StrictMode>,
