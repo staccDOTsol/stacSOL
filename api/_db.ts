@@ -1,5 +1,19 @@
 import { Pool } from 'pg'
 
+/**
+ * Read-time live NAV for pool_snapshots rows: backing ÷ LIVE mint supply,
+ * derived from the raw chain-read columns instead of trusting the stored
+ * `rate`. The stored column is only as good as whatever deployment wrote
+ * the row — an old snapshot writer (or cron pinned to a stale deployment)
+ * inserts accounting-formula rates that lag out-of-band burns, and a single
+ * such row at the head of the series flattens every trailing-yield
+ * computation. Falls back to the stored rate for legacy rows with no
+ * mint_supply.
+ */
+export const LIVE_NAV_SQL = `CASE WHEN mint_supply > 0
+  THEN (total_lamports / mint_supply)::DOUBLE PRECISION
+  ELSE rate END`
+
 // Neon pooled connection. Note: this module is imported by every serverless
 // function — pg.Pool internally caches connections per-process, so even
 // though Vercel may cold-start a fresh handler, repeated invocations on the
@@ -32,6 +46,34 @@ export async function ensureSchema() {
     );
     CREATE INDEX IF NOT EXISTS pool_snapshots_ts_idx ON pool_snapshots(ts DESC);
     ALTER TABLE pool_snapshots ADD COLUMN IF NOT EXISTS lp_price_sol DOUBLE PRECISION;
+
+    CREATE TABLE IF NOT EXISTS app_migrations (
+      key TEXT PRIMARY KEY,
+      applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+
+    -- One-shot backfill: \`rate\` historically stored total_lamports ÷
+    -- pool_token_supply — the stake-pool's INTERNAL accounting supply, which
+    -- only re-syncs with the live Token-2022 mint at UpdateStakePoolBalance.
+    -- Every out-of-band burn (manual BurnChecked, external burn loops) left
+    -- a drift window where history under-reported NAV. Each row already
+    -- stores the live mint_supply that was read from chain at snapshot time,
+    -- so the honest live rate is recoverable retroactively without walking
+    -- any transactions: backing ÷ live supply. /api/snapshot now writes the
+    -- same formula going forward.
+    DO $rate_live_backfill$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM app_migrations
+                     WHERE key = 'rate_live_mint_supply_v1') THEN
+        UPDATE pool_snapshots
+           SET rate = total_lamports::DOUBLE PRECISION
+                      / mint_supply::DOUBLE PRECISION
+         WHERE mint_supply > 0;
+        INSERT INTO app_migrations (key) VALUES ('rate_live_mint_supply_v1')
+          ON CONFLICT (key) DO NOTHING;
+      END IF;
+    END
+    $rate_live_backfill$;
 
     CREATE TABLE IF NOT EXISTS referral_credits (
       sig TEXT NOT NULL,
@@ -287,6 +329,88 @@ export async function ensureSchema() {
       candidate_count INT NOT NULL DEFAULT 0
     );
     CREATE INDEX IF NOT EXISTS burn_events_ts_idx ON burn_events(ts DESC);
+
+    -- Provenance for burn_events rows. 'self_report' = legacy POSTs from
+    -- scripts/burn-loop.ts via /api/manager-state; 'derived' = rows indexed
+    -- from on-chain Token-2022 burns by /api/ingest-burn-events (the current
+    -- burn loop runs externally and does not self-report). sig is the burn's
+    -- transaction signature — the partial unique index makes re-ingestion
+    -- idempotent. Self-reported rows keep sig NULL.
+    ALTER TABLE burn_events ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'self_report';
+    ALTER TABLE burn_events ADD COLUMN IF NOT EXISTS sig TEXT;
+    CREATE UNIQUE INDEX IF NOT EXISTS burn_events_sig_uidx
+      ON burn_events(sig) WHERE sig IS NOT NULL;
+    -- Drop remnants of an abandoned snapshot-diff reconciliation approach
+    -- (its DDL briefly ran against prod; supply diffing turned out to be
+    -- unusable because Sanctum-routed DepositStake mints are invisible to
+    -- pool_events — see ingest-burn-events.ts).
+    ALTER TABLE burn_events DROP COLUMN IF EXISTS snapshot_id;
+    DROP TABLE IF EXISTS burn_reconcile_state;
+
+    -- Signature cursor for /api/ingest-burn-events. Same shape as
+    -- referral_index_state / pool_index_state.
+    CREATE TABLE IF NOT EXISTS burn_index_state (
+      id INT PRIMARY KEY DEFAULT 1,
+      newest_sig TEXT,
+      oldest_sig TEXT,
+      backfill_done BOOLEAN NOT NULL DEFAULT FALSE,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    INSERT INTO burn_index_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+    -- Indexed meme universe for the trifecta flywheel. Top Solana tokens by
+    -- market cap, above a liquidity floor, minus the majors/stables/LSTs that
+    -- aren't laddering targets. Refreshed wholesale by /api/index-universe
+    -- (one Birdeye tokenlist sweep, cron every 15 min — the mcap ranking
+    -- barely moves intraday so this stays deep inside the CU budget) and read
+    -- by /api/universe with SWR. The captured mc/liquidity/volume let the
+    -- controller later filter relative to OUR own mcap ("bigger than us") and
+    -- skip the fiction-mcap thin pools whose headline cap is one wash-trade
+    -- wide. Nothing user-facing ever calls Birdeye directly.
+    CREATE TABLE IF NOT EXISTS meme_universe (
+      address TEXT PRIMARY KEY,
+      symbol TEXT,
+      name TEXT,
+      decimals INT,
+      mc DOUBLE PRECISION,
+      liquidity DOUBLE PRECISION,
+      volume24h DOUBLE PRECISION,
+      price_usd DOUBLE PRECISION,
+      logo_uri TEXT,
+      rank INT NOT NULL,
+      captured_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+    CREATE INDEX IF NOT EXISTS meme_universe_rank_idx ON meme_universe(rank);
+    CREATE INDEX IF NOT EXISTS meme_universe_mc_idx ON meme_universe(mc DESC NULLS LAST);
+
+    CREATE TABLE IF NOT EXISTS meme_universe_state (
+      id INT PRIMARY KEY DEFAULT 1,
+      last_refresh_at TIMESTAMPTZ,
+      token_count INT NOT NULL DEFAULT 0,
+      min_liquidity DOUBLE PRECISION,
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      CONSTRAINT meme_universe_state_single_row CHECK (id = 1)
+    );
+    INSERT INTO meme_universe_state (id) VALUES (1) ON CONFLICT (id) DO NOTHING;
+
+    -- Trifecta flywheel position-marker tokens (A/B/C and any the controller
+    -- mints later). Created by scripts/mint-trifecta.ts; the on-chain
+    -- Token-2022 metadata `uri` points back at /api/meta?mint=<address>, which
+    -- serves the Metaplex-style JSON (image etc.) out of this row. `cluster`
+    -- tags devnet vs mainnet so a rehearsal mint and a live mint can coexist.
+    -- `mint_authority` records the retained authority (NULL once renounced).
+    CREATE TABLE IF NOT EXISTS trifecta_tokens (
+      mint TEXT PRIMARY KEY,
+      symbol TEXT NOT NULL,
+      name TEXT NOT NULL,
+      description TEXT,
+      image TEXT NOT NULL,
+      external_url TEXT,
+      decimals INT NOT NULL,
+      cluster TEXT NOT NULL DEFAULT 'devnet',
+      mint_authority TEXT,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
   `
   await getPool().query(sql)
 }

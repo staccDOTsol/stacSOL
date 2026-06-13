@@ -95,9 +95,12 @@ export function YieldCalc({ pool }: Props) {
 
   if (!pool) return null
 
+  // Live chain-truth NAV — includes out-of-band burns the pool's internal
+  // accounting hasn't reconciled yet. This is a projection display, not a
+  // quote for an actual pool instruction.
   const rate =
-    pool.poolTokenSupplyAccounting > 0n
-      ? Number(pool.poolTotalLamports) / Number(pool.poolTokenSupplyAccounting)
+    pool.mintSupply > 0n
+      ? Number(pool.poolTotalLamports) / Number(pool.mintSupply)
       : 1
   const elapsedSec = Math.max(1, (Date.now() - deployTs) / 1000)
   const elapsedDays = elapsedSec / 86400

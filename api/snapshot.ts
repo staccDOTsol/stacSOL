@@ -68,7 +68,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const reserveLamports = BigInt(reserveAcc.lamports)
     const mintBuf = decodeAccountData(mintAcc)
     const mintSupply = mintBuf.readBigUInt64LE(36)
-    const rate = Number(totalLamports) / Number(poolTokenSupply || 1n)
+    // Live NAV: backing ÷ LIVE Token-2022 mint supply. pool_token_supply is
+    // the stake-pool's internal accounting and only re-syncs with the mint
+    // at UpdateStakePoolBalance — every out-of-band burn (manual BurnChecked,
+    // external burn loops) leaves it stale until the next crank, which made
+    // recorded rates under-report NAV in every drift window. mint.supply is
+    // the chain truth, no burn indexing needed.
+    const rate = Number(totalLamports) / Number(mintSupply || 1n)
 
     await getPool().query(
       `INSERT INTO pool_snapshots

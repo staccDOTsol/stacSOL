@@ -28,9 +28,9 @@ interface Metric {
 const METRICS: Metric[] = [
   {
     key: 'rate',
-    label: 'Redemption rate (NAV)',
+    label: 'NAV (live)',
     unit: 'SOL / stacSOL',
-    hint: 'pool.total_lamports ÷ pool.pool_token_supply — what WithdrawSol actually pays out',
+    hint: 'pool.total_lamports ÷ mint.supply — chain truth, counts every on-chain burn instantly (history backfilled the same way)',
     color: '#ff3300',
     pick: (s) => s.rate,
     fmt: (n) => n.toFixed(4),
@@ -57,7 +57,7 @@ const METRICS: Metric[] = [
     key: 'mintSupply',
     label: 'Token-2022 supply',
     unit: 'stacSOL',
-    hint: 'mint.supply — outstanding tokens. Drops on every burn-loop cycle.',
+    hint: 'mint.supply — outstanding tokens. Drops on every burn, whoever sends it.',
     color: '#ffcc00',
     pick: (s) => Number(s.mintSupply) / 1e9,
     fmt: (n) => n.toFixed(2),

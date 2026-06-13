@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { ensureSchema, getPool } from './_db.js'
+import { ensureSchema, getPool, LIVE_NAV_SQL } from './_db.js'
 
 const MARKETING_REFERRER = 'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j'
 
@@ -12,7 +12,7 @@ const STAC_PAYOUT_FRACTION = (10_000 - STAC_TRANSFER_FEE_BPS) / 10_000
 async function fetchLatestNav(): Promise<number | null> {
   try {
     const r = await getPool().query(
-      `SELECT rate FROM pool_snapshots ORDER BY ts DESC LIMIT 1`,
+      `SELECT ${LIVE_NAV_SQL} AS rate FROM pool_snapshots ORDER BY ts DESC LIMIT 1`,
     )
     if (r.rows.length === 0) return null
     const rate = Number(r.rows[0].rate)

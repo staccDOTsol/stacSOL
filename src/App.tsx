@@ -46,6 +46,7 @@ import {
 import { DECIMALS, MINT, TOKEN_2022 } from './lib/constants'
 import { fireBurn, fireMint, summarizeError } from './lib/confetti'
 import type { PoolState } from './lib/pool'
+import { liveRate } from './lib/pool'
 import type { Position } from './lib/position'
 
 const FEE = 0.069
@@ -100,15 +101,18 @@ function usePerf(): Perf {
 function PoolStats({ pool, rate, perf }: { pool: PoolState | null; rate: number; perf: Perf }) {
   const live = pool != null
   const backing = pool ? Number(pool.poolTotalLamports) / 1e9 : 0
-  const supply = pool ? Number(pool.poolTokenSupplyAccounting) / 1e9 : 0
+  // Live mint.supply, not the stake-pool's internal pool_token_supply — the
+  // latter only re-syncs at UpdateStakePoolBalance, so it misses out-of-band
+  // burns until the next crank. Same for the NAV passed in via `rate`.
+  const supply = pool ? Number(pool.mintSupply) / 1e9 : 0
   const stats = [
     { k: 'Backing', v: fmt(backing), u: 'SOL', s: 'pool.total_lamports' },
-    { k: 'Supply', v: fmt(supply), u: 'stacSOL', s: 'pool.pool_token_supply' },
+    { k: 'Supply', v: fmt(supply), u: 'stacSOL', s: 'mint.supply — live' },
     {
-      k: 'Redemption rate',
+      k: 'NAV (live)',
       v: rate.toFixed(6),
       u: 'SOL/stacSOL',
-      s: 'monotonically up',
+      s: 'backing ÷ live supply',
     },
     {
       k: 'Daily yield',
@@ -1275,10 +1279,17 @@ export default function App() {
   // transfers — used as the primary cost-basis source.
   const { row: holderRow } = useMyHolderRow()
 
+  // Program accounting rate — what DepositSol/WithdrawSol actually pay until
+  // the next UpdateStakePoolBalance. Quote math (ActionPanel, position mark,
+  // LP exposure) must use this, NOT the live rate, or burn quotes overpromise
+  // during a drift window.
   const rate =
     pool && pool.poolTokenSupplyAccounting > 0n
       ? Number(pool.poolTotalLamports) / Number(pool.poolTokenSupplyAccounting)
       : 1
+  // Live chain-truth NAV for the stats strip — counts every on-chain burn
+  // instantly, no crank dependency.
+  const navLive = liveRate(pool) ?? rate
 
   const lpExposure = useLpExposure(rate)
   const lpStac = Number(lpExposure.stacsolAtom) / Math.pow(10, DECIMALS)
@@ -1325,7 +1336,7 @@ export default function App() {
               protocol live · pool E6oqvrLK…Qixqb · refresh 10s
             </div>
 
-            <PoolStats pool={pool} rate={rate} perf={perf} />
+            <PoolStats pool={pool} rate={navLive} perf={perf} />
 
             <ActionPanel
               pool={pool}
@@ -1343,7 +1354,7 @@ export default function App() {
 
           <aside className="aside">
             <PositionCard
-              rate={rate}
+              rate={navLive}
               position={position}
               holderRow={holderRow}
               walletStacAtom={walletStacAtom}

@@ -22,6 +22,27 @@ export interface PoolState {
   reserveLamports: bigint   // reserve stake account .lamports (live)
 }
 
+// Rate helpers ---------------------------------------------------------------
+// programRate: what DepositSol/WithdrawSol actually pay — the stake-pool's
+// internal accounting (total_lamports ÷ pool_token_supply). pool_token_supply
+// only re-syncs with the live mint at UpdateStakePoolBalance, so this lags
+// out-of-band burns (manual BurnChecked, external burn loops, anyone torching
+// their own tokens). Quote math for real pool instructions must use this.
+export function programRate(pool: PoolState | null): number | null {
+  if (!pool || pool.poolTokenSupplyAccounting <= 0n) return null
+  return Number(pool.poolTotalLamports) / Number(pool.poolTokenSupplyAccounting)
+}
+
+// liveRate: SOL backing ÷ LIVE Token-2022 mint.supply — the chain truth.
+// Reflects every burn the moment it lands, regardless of who burned or
+// whether any loop has cranked the pool since. Display/stats surfaces use
+// this. (The backing side stays on total_lamports because the reserve
+// account alone is NOT the backing — most of it is delegated to validators.)
+export function liveRate(pool: PoolState | null): number | null {
+  if (!pool || pool.mintSupply <= 0n) return null
+  return Number(pool.poolTotalLamports) / Number(pool.mintSupply)
+}
+
 // StakePool offsets — spl-stake-pool v1.0.0 layout, fixed-position prefix
 // (parsed manually to avoid pulling in borsh-deserialize for the whole struct)
 export async function fetchPool(conn: Connection): Promise<PoolState> {

@@ -71,4 +71,59 @@ export function pickLpPriceSol(markets: BirdeyeMarket[]): number | null {
   return null
 }
 
+// --- Tokenlist (universe ranking) -------------------------------------------
+// Distinct from the markets fetcher above: this ranks the whole chain's tokens
+// by market cap (the trifecta flywheel's target set), not the LPs of one mint.
+
+export interface BirdeyeToken {
+  address: string
+  symbol?: string
+  name?: string
+  decimals?: number
+  mc?: number
+  liquidity?: number
+  v24hUSD?: number
+  price?: number
+  logoURI?: string
+}
+
+interface BirdeyeTokenlistResponse {
+  success: boolean
+  // The v1 tokenlist nests the array under `tokens`; older/other shapes have
+  // used `items` (as the v2 markets endpoint does). Accept either.
+  data?: { tokens?: BirdeyeToken[]; items?: BirdeyeToken[]; total?: number }
+  message?: string
+}
+
+/**
+ * Top Solana tokens by market cap, descending, above a liquidity floor.
+ * Pages `/defi/tokenlist` (Birdeye caps limit at 50/page). `count` is the
+ * total wanted across pages; we stop early on a short page. One sweep is a
+ * handful of calls — cron this, don't hot-path it.
+ */
+export async function fetchTopTokensByMcap(
+  apiKey: string,
+  opts: { count: number; minLiquidity: number },
+): Promise<BirdeyeToken[]> {
+  const out: BirdeyeToken[] = []
+  const pageSize = 50
+  for (let offset = 0; offset < opts.count && offset < 1000; offset += pageSize) {
+    const limit = Math.min(pageSize, opts.count - offset)
+    const url =
+      `https://public-api.birdeye.so/defi/tokenlist?sort_by=mc&sort_type=desc` +
+      `&offset=${offset}&limit=${limit}&min_liquidity=${opts.minLiquidity}`
+    const r = await fetch(url, {
+      headers: { 'X-API-KEY': apiKey, 'x-chain': 'solana' },
+      signal: AbortSignal.timeout(10_000),
+    })
+    if (!r.ok) break
+    const j = (await r.json()) as BirdeyeTokenlistResponse
+    if (!j.success || !j.data) break
+    const page = j.data.tokens ?? j.data.items ?? []
+    out.push(...page)
+    if (page.length < limit) break
+  }
+  return out
+}
+
 export { STACSOL, WSOL, SANCTUM_POOL }

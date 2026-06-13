@@ -45,9 +45,12 @@ export function TweetButton({
     ? '↑ 3.45% kicked back via my link'
     : null
 
+  // Live chain-truth NAV (backing ÷ mint.supply) — the tweet should brag
+  // about the rate that already includes every on-chain burn, not the
+  // stake-pool's internal accounting that lags until the next crank.
   const rate =
-    pool.poolTokenSupplyAccounting > 0n
-      ? Number(pool.poolTotalLamports) / Number(pool.poolTokenSupplyAccounting)
+    pool.mintSupply > 0n
+      ? Number(pool.poolTotalLamports) / Number(pool.mintSupply)
       : 1
   const { apr } = computeApr(rate, deployTs)
   const pnl = position ? computePnL(position, rate) : null

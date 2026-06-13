@@ -1,17 +1,10 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import {
-  deriveAssociatedTokenAddress,
-  findProgramAddressSync,
   getMultipleAccountsBase64,
-  getParsedTransaction,
-  getSignaturesForAddress,
   decodeAccountData,
-  type ParsedTransactionRpc,
-  type ParsedInstructionRpc,
-  type SignatureInfo,
 } from './_solana-rpc.js'
 
-import { ensureSchema, getPool } from './_db.js'
+import { ensureSchema, getPool, LIVE_NAV_SQL } from './_db.js'
 
 // SOL-denominated price endpoint for stacSOL + wstacSOL via canonical
 // Sanctum SPL stake-pool math.
@@ -52,7 +45,7 @@ async function fetchLatestNavFromSnapshots(): Promise<NavSnapshot | null> {
         total_lamports::TEXT          AS total_lamports,
         pool_token_supply::TEXT       AS pool_token_supply,
         last_update_epoch             AS last_update_epoch,
-        rate                          AS rate,
+        ${LIVE_NAV_SQL}               AS rate,
         EXTRACT(EPOCH FROM ts) * 1000 AS ts_ms
        FROM pool_snapshots
        ORDER BY ts DESC
@@ -79,26 +72,27 @@ async function fetchLatestNavFromSnapshots(): Promise<NavSnapshot | null> {
   }
 }
 
-import {
-  RpcPubkey,
-  getAccountInfoBase64,
-} from './_solana-rpc.js'
+import { RpcPubkey } from './_solana-rpc.js'
 
 async function fetchLiveNav(rpcUrl: string): Promise<NavSnapshot> {
-  // Fetch raw account data over RPC
-  // POOL should be a string representing the public key, not RpcPubkey
-  const acc = await getAccountInfoBase64(rpcUrl, POOL.toString())
-  if (!acc || typeof acc.data !== 'string') throw new Error('pool account not found or malformed')
-
-  // acc.data is a base64-encoded string, decode it as a Buffer
-  const d = Buffer.from(acc.data, 'base64')
+  const [poolAcc, mintAcc] = await getMultipleAccountsBase64(rpcUrl, [
+    POOL.toString(),
+    STACSOL_MINT,
+  ])
+  if (!poolAcc) throw new Error('pool account not found')
+  if (!mintAcc) throw new Error('mint account not found')
+  const d = decodeAccountData(poolAcc)
 
   // Read u64 values out of the buffer at the proper offsets
   const totalLamports = d.readBigUInt64LE(258)
   const poolTokenSupply = d.readBigUInt64LE(266)
   const lastUpdateEpoch = d.readBigUInt64LE(274)
+  // Live NAV: backing ÷ LIVE Token-2022 mint.supply (u64 @ 36 of the mint
+  // account). pool_token_supply lags out-of-band burns until the next
+  // UpdateStakePoolBalance crank — same doctrine as /api/snapshot.
+  const mintSupply = decodeAccountData(mintAcc).readBigUInt64LE(36)
   const nav =
-    poolTokenSupply > 0n ? Number(totalLamports) / Number(poolTokenSupply) : 1
+    mintSupply > 0n ? Number(totalLamports) / Number(mintSupply) : 1
 
   return {
     navSol: nav,

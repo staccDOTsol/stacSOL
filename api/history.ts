@@ -1,5 +1,5 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
-import { ensureSchema, getPool } from './_db.js'
+import { ensureSchema, getPool, LIVE_NAV_SQL } from './_db.js'
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
@@ -8,10 +8,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     // Optional `since` param: ms epoch — return snapshots newer than this.
     const sinceMs = parseInt(String(req.query.since ?? '0'), 10) || 0
 
+    // rate is computed at read time (LIVE_NAV_SQL) from the raw chain-read
+    // columns, never trusted from the stored column — see _db.ts.
     const sql = sinceMs > 0
       ? `SELECT id, EXTRACT(EPOCH FROM ts) * 1000 AS ts_ms,
                  total_lamports, pool_token_supply, mint_supply,
-                 reserve_lamports, rate, last_update_epoch, lp_price_sol
+                 reserve_lamports, ${LIVE_NAV_SQL} AS rate,
+                 last_update_epoch, lp_price_sol
          FROM pool_snapshots
          WHERE ts > to_timestamp($2 / 1000.0)
          ORDER BY ts ASC
@@ -19,7 +22,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       : `SELECT * FROM (
            SELECT id, EXTRACT(EPOCH FROM ts) * 1000 AS ts_ms,
                   total_lamports, pool_token_supply, mint_supply,
-                  reserve_lamports, rate, last_update_epoch, lp_price_sol
+                  reserve_lamports, ${LIVE_NAV_SQL} AS rate,
+                  last_update_epoch, lp_price_sol
            FROM pool_snapshots
            ORDER BY ts DESC
            LIMIT $1

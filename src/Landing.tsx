@@ -76,12 +76,18 @@ async function fetchLiveRate(): Promise<number | null> {
       return null
     }
     const poolData = Uint8Array.from(atob(accounts[0].data[0]), c => c.charCodeAt(0))
-    // SPL stake-pool v1.0.0 fixed offsets — total_lamports @ 258, supply @ 266.
+    // SPL stake-pool v1.0.0 fixed offsets — total_lamports @ 258.
     // Use DataView with the underlying ArrayBuffer so byteOffset (from atob's
     // typed array) is respected.
     const dv = new DataView(poolData.buffer, poolData.byteOffset, poolData.byteLength)
     const totalLamports = dv.getBigUint64(258, true)
-    const supply = dv.getBigUint64(266, true)
+    // Divide by the LIVE Token-2022 mint.supply (u64 @ 36 of the mint
+    // account), not the pool's internal pool_token_supply — the latter only
+    // re-syncs at UpdateStakePoolBalance, so it misses out-of-band burns
+    // until the next crank.
+    const mintData = Uint8Array.from(atob(accounts[1].data[0]), c => c.charCodeAt(0))
+    const mdv = new DataView(mintData.buffer, mintData.byteOffset, mintData.byteLength)
+    const supply = mdv.getBigUint64(36, true)
     if (supply === 0n) return null
     return Number(totalLamports) / Number(supply)
   } catch {

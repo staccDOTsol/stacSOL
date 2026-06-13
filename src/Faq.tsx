@@ -685,7 +685,9 @@ function LiveStats() {
   if (!pool) return null
 
   const total = Number(pool.poolTotalLamports) / 1e9
-  const supply = Number(pool.poolTokenSupplyAccounting) / 1e9
+  // Live mint.supply — counts every on-chain burn instantly; the pool's
+  // internal pool_token_supply lags until the next UpdateStakePoolBalance.
+  const supply = Number(pool.mintSupply) / 1e9
   const rate = supply > 0 ? total / supply : 0
   // First-round payout: each user's burn yields 0.931 × amount × rate.
   // The remaining 0.069 lands in the manager fee account as stacSOL.
@@ -772,7 +774,8 @@ function BankrunMath() {
   const { pool } = usePool()
   if (!pool) return <p>(loading live pool state…)</p>
   const total = Number(pool.poolTotalLamports) / 1e9
-  const supply = Number(pool.poolTokenSupplyAccounting) / 1e9
+  // Live mint.supply, same reasoning as LiveStats above.
+  const supply = Number(pool.mintSupply) / 1e9
   const rate = supply > 0 ? total / supply : 0
   const round1Out = supply * 0.931 * rate
   const cascadeRemaining = total - round1Out

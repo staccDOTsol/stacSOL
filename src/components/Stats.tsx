@@ -1,5 +1,6 @@
 import { fmtAmount, shortPk } from '../lib/format'
 import type { PoolState } from '../lib/pool'
+import { liveRate, programRate } from '../lib/pool'
 import { POOL } from '../lib/constants'
 import { useHistory } from '../hooks/useHistory'
 
@@ -22,26 +23,30 @@ const MAX_DISPLAYED_APR_PCT = 1_000
 export function Stats({ pool }: { pool: PoolState | null }) {
   const { history } = useHistory()
 
-  // Authoritative rate is what the SPL stake pool program uses for redemption.
-  // pool.total_lamports / pool.pool_token_supply. While pool is null (RPC
-  // hasn't responded yet) we render "—" instead of "1.000000" — the latter
-  // gives the user a brief panic that NAV crashed back to par.
+  // Headline NAV is the LIVE chain truth: backing ÷ Token-2022 mint.supply.
+  // The mint supply moves the instant ANY burn lands (manual BurnChecked,
+  // external burn loops — no dependency on who burned or whether the pool
+  // has been cranked since). While pool is null (RPC hasn't responded yet)
+  // we render "—" instead of "1.000000" — the latter gives the user a brief
+  // panic that NAV crashed back to par.
   const reserves = pool ? fmtAmount(pool.poolTotalLamports) : '—'
-  const supply = pool ? fmtAmount(pool.poolTokenSupplyAccounting) : '—'
-  const rateLoaded = !!pool && pool.poolTokenSupplyAccounting > 0n
-  const rateNum = rateLoaded
-    ? Number(pool!.poolTotalLamports) / Number(pool!.poolTokenSupplyAccounting)
-    : 1
+  const supply = pool ? fmtAmount(pool.mintSupply) : '—'
+  const rateLive = liveRate(pool)
+  const rateLoaded = rateLive != null
+  const rateNum = rateLive ?? 1
   const rateStr = rateLoaded ? rateNum.toFixed(6) : '—'
 
-  // Live mint.supply may diverge between UpdateStakePoolBalance calls due to
-  // out-of-band burns; surface this so users can see whether a sync is pending.
+  // The stake-pool program's internal accounting (pool_token_supply) only
+  // re-syncs with the mint at UpdateStakePoolBalance — until then WithdrawSol
+  // still pays the stale, lower rate. Surface that lag so users know why a
+  // burn hasn't hit their redemption quote yet.
+  const rateProgram = programRate(pool)
   const mintLive = pool ? Number(pool.mintSupply) / 1e9 : null
   const accountingLive = pool ? Number(pool.poolTokenSupplyAccounting) / 1e9 : null
   const drift = mintLive != null && accountingLive != null ? accountingLive - mintLive : null
   const driftStr =
-    drift != null && Math.abs(drift) > 1e-6
-      ? `pending sync — Token-2022 mint.supply is ${mintLive!.toFixed(6)}, drift ${drift > 0 ? '+' : ''}${drift.toFixed(6)} stacSOL`
+    drift != null && Math.abs(drift) > 1e-6 && rateProgram != null
+      ? `program sync pending — ${drift.toFixed(6)} stacSOL burned but not yet reconciled; WithdrawSol pays ${rateProgram.toFixed(6)} until the next UpdateStakePoolBalance`
       : null
 
   // Trailing-24h compound APR. Same math as Landing.tsx so both surfaces
@@ -97,13 +102,13 @@ export function Stats({ pool }: { pool: PoolState | null }) {
           label="Supply"
           value={supply}
           unit="stacSOL"
-          sub="pool.pool_token_supply"
+          sub="mint.supply — live, drops on every burn"
         />
         <Stat
-          label="Redemption rate (NAV)"
+          label="NAV (live)"
           value={rateStr}
           unit="SOL / stacSOL"
-          sub="what WithdrawSol actually pays out"
+          sub="backing ÷ live supply — counts every on-chain burn"
         />
         <Stat label="Implied APR" value={aprDisplay} sub={aprDetail} />
       </div>
