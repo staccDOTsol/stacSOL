@@ -6,7 +6,6 @@ import {
   usePublicClient,
   useReadContract,
   useSendTransaction,
-  useSwitchChain,
   useWriteContract,
 } from 'wagmi'
 import {
@@ -25,6 +24,7 @@ import {
   LIDO_STETH,
   WSTETH_MAINNET,
 } from '../lib/evm-abi'
+import { switchWalletChain, walletChainError } from '../lib/evm-switch-chain'
 
 type Tab = 'mint' | 'redeem'
 type Source = 'native' | 'lst'
@@ -52,9 +52,8 @@ export function EvmActionPanel({
   chain: EvmChainConfig
   nav: number | null
 }) {
-  const { address, chainId, isConnected } = useAccount()
+  const { address, chainId, connector, isConnected } = useAccount()
   const { connect, connectors } = useConnect()
-  const { switchChainAsync } = useSwitchChain()
   const publicClient = usePublicClient({ chainId: chain.chainId })
   const { writeContractAsync } = useWriteContract()
   const { sendTransactionAsync } = useSendTransaction()
@@ -139,6 +138,15 @@ export function EvmActionPanel({
 
   const busy = status.s === 'busy'
 
+  const switchToChain = useCallback(async () => {
+    setStatus({ s: 'busy', m: `Switching to ${chain.name}…` })
+    try {
+      await switchWalletChain(connector, chain.chainId)
+    } catch (e) {
+      throw new Error(walletChainError(e, chain.name, chain.chainId))
+    }
+  }, [chain.chainId, chain.name, connector])
+
   const ensureReady = useCallback(async (): Promise<Address | null> => {
     if (!isConnected) {
       const c = connectors[0]
@@ -150,20 +158,18 @@ export function EvmActionPanel({
       return null
     }
     if (chainId !== chain.chainId) {
-      setStatus({ s: 'busy', m: `Switching to ${chain.name}…` })
-      await switchChainAsync({ chainId: chain.chainId })
+      await switchToChain()
     }
     if (!address) return null
     return address
   }, [
     address,
     chain.chainId,
-    chain.name,
     chainId,
     connect,
     connectors,
     isConnected,
-    switchChainAsync,
+    switchToChain,
   ])
 
   const waitTx = useCallback(
@@ -293,11 +299,13 @@ export function EvmActionPanel({
     }
     if (!onChain) {
       try {
-        setStatus({ s: 'busy', m: `Switching to ${chain.name}…` })
-        await switchChainAsync({ chainId: chain.chainId })
+        await switchToChain()
         setStatus({ s: 'idle' })
       } catch (e) {
-        setStatus({ s: 'err', m: (e as Error).message || 'Chain switch failed' })
+        setStatus({
+          s: 'err',
+          m: e instanceof Error ? e.message : walletChainError(e, chain.name, chain.chainId),
+        })
       }
       return
     }
