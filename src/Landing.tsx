@@ -984,7 +984,7 @@ function Footer() {
       <div className="shell foot-inner">
         <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
           <a href="/faq">FAQ</a>
-          <a href="/evm">Why not EVM</a>
+          <a href="/evm">EVM</a>
           <a href="/leaderboard">Leaderboard</a>
           <a href="/portfolio">Portfolio</a>
           <a href="/terms">Terms</a>

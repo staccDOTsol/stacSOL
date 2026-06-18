@@ -90,7 +90,7 @@ const isTrade = path === '/trade' || path.startsWith('/trade/')
 const isCreate = path === '/create' || path.startsWith('/create/')
 // /launches — dashboard of every curve on the launchpad.
 const isLaunches = path === '/launches' || path.startsWith('/launches/')
-// /evm — why the deflationary LST mechanic is Solana-only.
+// /evm — multi-chain EVM vault cards (Hype / ETH / Base / BNB).
 const isEvm = path === '/evm' || path.startsWith('/evm/')
 // The dashboard (mint/burn/wrap/position) used to live at `/`. It now
 // lives at `/app` so `/` can serve the marketing landing without dragging
@@ -212,7 +212,7 @@ createRoot(document.getElementById('root')!).render(
           <Launches />
         </Providers>
       ) : isEvm ? (
-        // /evm — editorial chain thesis. No wallet needed.
+        // /evm — EVM vault lander. Live NAV via /api/evm-nav, no wallet needed.
         <Evm />
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter

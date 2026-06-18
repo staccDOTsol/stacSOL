@@ -556,6 +556,27 @@ body:not([data-theme="ink"]) .theme-toggle .moon { transform: rotate(0deg) scale
   .dash-grid { grid-template-columns: 1fr; }
 }
 
+/* /evm — four-chain vault cards */
+.evm-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: clamp(20px, 3vw, 28px);
+  align-items: start;
+}
+@media (max-width: 820px) {
+  .evm-grid { grid-template-columns: 1fr; }
+}
+.evm-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 22px;
+}
+.evm-card-actions .btn {
+  font-size: 12.5px;
+  padding: 10px 14px;
+}
+
 .dash-h {
   font-family: var(--f-display);
   font-size: clamp(40px, 5vw, 64px);
