@@ -41,8 +41,14 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       return res.status(priceRes.status).json({ error: err || 'paraswap price failed' })
     }
     const price = (await priceRes.json()) as {
-      priceRoute: unknown
-      destAmount: string
+      priceRoute: { destAmount?: string } & Record<string, unknown>
+      destAmount?: string
+    }
+
+    const destAmount =
+      price.priceRoute?.destAmount ?? price.destAmount ?? ''
+    if (!destAmount) {
+      return res.status(502).json({ error: 'paraswap returned no destAmount' })
     }
 
     const txRes = await fetch(
@@ -54,7 +60,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
           srcToken: NATIVE,
           destToken,
           srcAmount: amount,
-          destAmount: price.destAmount,
+          destAmount,
           priceRoute: price.priceRoute,
           userAddress: user,
           partner: 'stacsol',
@@ -74,7 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
 
     res.setHeader('Cache-Control', 'no-store')
     res.status(200).json({
-      destAmount: price.destAmount,
+      destAmount,
       to: tx.to,
       data: tx.data,
       value: tx.value,

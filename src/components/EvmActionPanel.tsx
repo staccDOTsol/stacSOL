@@ -25,6 +25,7 @@ import {
   WSTETH_MAINNET,
 } from '../lib/evm-abi'
 import { switchWalletChain, walletChainError } from '../lib/evm-switch-chain'
+import { preferredEvmConnector } from '../lib/evm-wagmi'
 
 type Tab = 'mint' | 'redeem'
 type Source = 'native' | 'lst'
@@ -149,9 +150,9 @@ export function EvmActionPanel({
 
   const ensureReady = useCallback(async (): Promise<Address | null> => {
     if (!isConnected) {
-      const c = connectors[0]
+      const c = preferredEvmConnector(connectors)
       if (!c) {
-        setStatus({ s: 'err', m: 'No injected wallet found' })
+        setStatus({ s: 'err', m: 'Phantom not found — install the extension' })
         return null
       }
       connect({ connector: c, chainId: chain.chainId })
@@ -261,11 +262,21 @@ export function EvmActionPanel({
       const res = await fetch(
         `/api/evm-swap?chainId=${chain.chainId}&amount=${value.toString()}&user=${owner}`,
       )
-      if (!res.ok) {
-        const j = (await res.json().catch(() => ({}))) as { error?: string }
-        throw new Error(j.error ?? `swap quote ${res.status}`)
+      const raw = await res.text()
+      let swap: { to: Address; data: `0x${string}`; value: string }
+      try {
+        swap = JSON.parse(raw) as typeof swap
+      } catch {
+        throw new Error(
+          res.ok
+            ? 'Swap API returned invalid JSON'
+            : `Swap failed (${res.status}) — is /api/evm-swap running?`,
+        )
       }
-      const swap = (await res.json()) as { to: Address; data: `0x${string}`; value: string }
+      if (!res.ok) {
+        const err = (swap as { error?: string }).error ?? `swap quote ${res.status}`
+        throw new Error(err)
+      }
       setStatus({ s: 'busy', m: 'Swapping to backing LST…' })
       const swapHash = await sendTransactionAsync({
         to: swap.to,
@@ -289,9 +300,9 @@ export function EvmActionPanel({
 
   const handlePrimary = async () => {
     if (!isConnected) {
-      const c = connectors[0]
+      const c = preferredEvmConnector(connectors)
       if (!c) {
-        setStatus({ s: 'err', m: 'No injected wallet found' })
+        setStatus({ s: 'err', m: 'Phantom not found — install the extension' })
         return
       }
       connect({ connector: c, chainId: chain.chainId })

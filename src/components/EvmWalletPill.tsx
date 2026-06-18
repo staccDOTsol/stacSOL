@@ -1,6 +1,7 @@
 import { useAccount, useConnect, useDisconnect } from 'wagmi'
+import { preferredEvmConnector } from '../lib/evm-wagmi'
 
-export default function EvmWalletPill({ label = 'Connect EVM wallet' }: { label?: string }) {
+export default function EvmWalletPill({ label = 'Connect Phantom' }: { label?: string }) {
   const { address } = useAccount()
   const { connect, connectors, isPending } = useConnect()
   const { disconnect } = useDisconnect()
@@ -28,7 +29,7 @@ export default function EvmWalletPill({ label = 'Connect EVM wallet' }: { label?
       className="nav-cta"
       disabled={isPending}
       onClick={() => {
-        const c = connectors[0]
+        const c = preferredEvmConnector(connectors)
         if (c) connect({ connector: c })
       }}
       style={{ background: 'var(--accent-deep)', color: 'var(--bg)' }}
