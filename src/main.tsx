@@ -35,6 +35,7 @@ const WrapPage = lazy(() => import('./Wrap.tsx'))
 const Trade = lazy(() => import('./Trade.tsx'))
 const CreateCurve = lazy(() => import('./CreateCurve.tsx'))
 const Launches = lazy(() => import('./Launches.tsx'))
+const Evm = lazy(() => import('./Evm.tsx'))
 
 // Derive the WebSocket endpoint from the HTTP RPC URL. @solana/web3.js does
 // this auto-derivation internally too, but doing it here means we can pin
@@ -89,6 +90,8 @@ const isTrade = path === '/trade' || path.startsWith('/trade/')
 const isCreate = path === '/create' || path.startsWith('/create/')
 // /launches — dashboard of every curve on the launchpad.
 const isLaunches = path === '/launches' || path.startsWith('/launches/')
+// /evm — why the deflationary LST mechanic is Solana-only.
+const isEvm = path === '/evm' || path.startsWith('/evm/')
 // The dashboard (mint/burn/wrap/position) used to live at `/`. It now
 // lives at `/app` so `/` can serve the marketing landing without dragging
 // the wallet-adapter / Solana web3 chunk on first paint.
@@ -121,6 +124,7 @@ const isLanding =
   !isTrade &&
   !isCreate &&
   !isLaunches &&
+  !isEvm &&
   !isApp
 // Editorial routes render the shared EditorialNav (with its own
 // theme-toggle button), so we suppress the legacy top-right ThemeToggle on
@@ -134,6 +138,7 @@ const isEditorial =
   isTrade ||
   isCreate ||
   isLaunches ||
+  isEvm ||
   isPortfolio ||
   isLeaderboard ||
   isFaq
@@ -206,6 +211,9 @@ createRoot(document.getElementById('root')!).render(
         <Providers>
           <Launches />
         </Providers>
+      ) : isEvm ? (
+        // /evm — editorial chain thesis. No wallet needed.
+        <Evm />
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter
         // mounted here only — the marketing landing at `/` stays clean.

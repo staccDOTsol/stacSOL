@@ -178,7 +178,7 @@ function useLivePerf(refreshMs = 30_000): PerfState {
       //    (deployed Vercel build, or vite dev with proxy). Uses the
       //    "find a usable window" helper — see findRealizedDailyRate.
       try {
-        const r = await fetch('/api/history?limit=500')
+        const r = await fetch('/api/history?limit=5000')
         if (r.ok) {
           const rows: { ts: number; rate: number }[] = await r.json()
           if (Array.isArray(rows) && rows.length > 0) {
@@ -984,6 +984,7 @@ function Footer() {
       <div className="shell foot-inner">
         <div style={{ display: 'flex', gap: 28, flexWrap: 'wrap' }}>
           <a href="/faq">FAQ</a>
+          <a href="/evm">Why not EVM</a>
           <a href="/leaderboard">Leaderboard</a>
           <a href="/portfolio">Portfolio</a>
           <a href="/terms">Terms</a>

@@ -15,6 +15,14 @@
     {
       "path": "/api/ingest-pool-events",
       "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/ingest-burn-events",
+      "schedule": "*/5 * * * *"
+    },
+    {
+      "path": "/api/index-universe",
+      "schedule": "*/15 * * * *"
     }
   ],
   "rewrites": [
@@ -46,6 +54,8 @@
     { "source": "/create", "destination": "/index.html" },
     { "source": "/create/(.*)", "destination": "/index.html" },
     { "source": "/launches", "destination": "/index.html" },
-    { "source": "/launches/(.*)", "destination": "/index.html" }
+    { "source": "/launches/(.*)", "destination": "/index.html" },
+    { "source": "/evm", "destination": "/index.html" },
+    { "source": "/evm/(.*)", "destination": "/index.html" }
   ]
 }

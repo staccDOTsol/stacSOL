@@ -46,6 +46,7 @@ const MORE_LINKS = [
   { id: '/liqmonsta', label: 'Liqmonsta', sub: 'Auto-rebalance LP smasher' },
   { id: '/guide', label: 'Guide', sub: 'SOL of the thystaccfloweth' },
   { id: '/baitscope', label: 'Baitscope', sub: 'Flywheel feed · trades & burns' },
+  { id: '/evm', label: 'Why not EVM', sub: 'Chain thesis · Solana-only primitives' },
 ]
 
 function ThemeButton() {

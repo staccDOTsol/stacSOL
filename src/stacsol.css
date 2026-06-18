@@ -529,6 +529,17 @@ body:not([data-theme="ink"]) .theme-toggle .moon { transform: rotate(0deg) scale
   .cmp-row.head { display: none; }
 }
 
+/* /evm — 4-column comparison table collapses on narrow screens */
+@media (max-width: 900px) {
+  .evm-cmp-row {
+    grid-template-columns: 1fr !important;
+  }
+  .evm-cmp-row > div:first-child {
+    border-bottom: 1px solid var(--line-soft);
+    padding-bottom: 8px !important;
+  }
+}
+
 /* ============================================================
    DASHBOARD
    ============================================================ */
