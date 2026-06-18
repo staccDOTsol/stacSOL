@@ -1,10 +1,11 @@
-import { useAccount, useConnect, useDisconnect } from 'wagmi'
-import { preferredEvmConnector } from '../lib/evm-wagmi'
+import { useState } from 'react'
+import { useAccount, useDisconnect } from 'wagmi'
+import { EvmWalletMenu } from './EvmWalletMenu'
 
-export default function EvmWalletPill({ label = 'Connect Phantom' }: { label?: string }) {
+export default function EvmWalletPill({ label = 'Connect wallet' }: { label?: string }) {
   const { address } = useAccount()
-  const { connect, connectors, isPending } = useConnect()
   const { disconnect } = useDisconnect()
+  const [menuOpen, setMenuOpen] = useState(false)
 
   const short = address ? `${address.slice(0, 6)}…${address.slice(-4)}` : null
 
@@ -24,21 +25,20 @@ export default function EvmWalletPill({ label = 'Connect Phantom' }: { label?: s
   }
 
   return (
-    <button
-      type="button"
-      className="nav-cta"
-      disabled={isPending}
-      onClick={() => {
-        const c = preferredEvmConnector(connectors)
-        if (c) connect({ connector: c })
-      }}
-      style={{ background: 'var(--accent-deep)', color: 'var(--bg)' }}
-    >
-      <span className="pulse" />
-      {isPending ? 'Connecting…' : label}
-      <span style={{ marginLeft: 2 }} aria-hidden>
-        →
-      </span>
-    </button>
+    <div className="evm-wallet-pill-wrap">
+      <button
+        type="button"
+        className="nav-cta"
+        onClick={() => setMenuOpen((o) => !o)}
+        style={{ background: 'var(--accent-deep)', color: 'var(--bg)' }}
+      >
+        <span className="pulse" />
+        {label}
+        <span style={{ marginLeft: 2 }} aria-hidden>
+          →
+        </span>
+      </button>
+      <EvmWalletMenu open={menuOpen} onClose={() => setMenuOpen(false)} />
+    </div>
   )
 }

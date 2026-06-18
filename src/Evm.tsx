@@ -165,7 +165,7 @@ export default function Evm() {
     <>
       <EditorialNav
         pathname="/evm"
-        ctaSlot={<EvmWalletPill label="Connect Phantom" />}
+        ctaSlot={<EvmWalletPill label="Connect wallet" />}
       />
       <main className="dash shell">
         <section style={{ paddingBlock: '32px 28px' }}>

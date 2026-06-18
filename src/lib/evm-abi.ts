@@ -114,3 +114,21 @@ export const wstEthAbi = [
 
 export const LIDO_STETH = '0xae7ab96520de3a18e1167f7a11e7ff2415c558497' as const
 export const WSTETH_MAINNET = '0x7f39c581f595b53c5cb19bd0b3f8da6c935e2ca0' as const
+
+/** Kinetiq liquid staking on HyperEVM — stake() mints kHYPE. */
+export const KINETIQ_STAKING =
+  '0x393d0b87ed38fc779fd9611144ae649ba6082109' as const
+export const KHYPE = '0xfd739d4e423301ce9385c1fb8850539d657c296d' as const
+
+export const kinetiqStakeAbi = [
+  {
+    type: 'function',
+    name: 'stake',
+    inputs: [],
+    outputs: [],
+    stateMutability: 'payable',
+  },
+] as const
+
+/** Kinetiq requires stake amounts divisible by 1e10 wei. */
+export const KINETIQ_STAKE_STEP = 10_000_000_000n

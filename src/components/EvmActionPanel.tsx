@@ -2,7 +2,6 @@ import { useCallback, useMemo, useState } from 'react'
 import {
   useAccount,
   useBalance,
-  useConnect,
   usePublicClient,
   useReadContract,
   useSendTransaction,
@@ -19,13 +18,17 @@ import type { EvmChainConfig } from '../lib/evm-chains'
 import {
   erc20Abi,
   erc4626Abi,
+  kinetiqStakeAbi,
   lidoStEthAbi,
   wstEthAbi,
+  KINETIQ_STAKE_STEP,
+  KINETIQ_STAKING,
+  KHYPE,
   LIDO_STETH,
   WSTETH_MAINNET,
 } from '../lib/evm-abi'
 import { switchWalletChain, walletChainError } from '../lib/evm-switch-chain'
-import { preferredEvmConnector } from '../lib/evm-wagmi'
+import { EvmWalletMenu } from './EvmWalletMenu'
 
 type Tab = 'mint' | 'redeem'
 type Source = 'native' | 'lst'
@@ -54,7 +57,7 @@ export function EvmActionPanel({
   nav: number | null
 }) {
   const { address, chainId, connector, isConnected } = useAccount()
-  const { connect, connectors } = useConnect()
+  const [walletMenuOpen, setWalletMenuOpen] = useState(false)
   const publicClient = usePublicClient({ chainId: chain.chainId })
   const { writeContractAsync } = useWriteContract()
   const { sendTransactionAsync } = useSendTransaction()
@@ -150,12 +153,7 @@ export function EvmActionPanel({
 
   const ensureReady = useCallback(async (): Promise<Address | null> => {
     if (!isConnected) {
-      const c = preferredEvmConnector(connectors)
-      if (!c) {
-        setStatus({ s: 'err', m: 'Phantom not found — install the extension' })
-        return null
-      }
-      connect({ connector: c, chainId: chain.chainId })
+      setWalletMenuOpen(true)
       return null
     }
     if (chainId !== chain.chainId) {
@@ -167,8 +165,6 @@ export function EvmActionPanel({
     address,
     chain.chainId,
     chainId,
-    connect,
-    connectors,
     isConnected,
     switchToChain,
   ])
@@ -298,14 +294,37 @@ export function EvmActionPanel({
     [asset, chain.chainId, depositLst, publicClient, sendTransactionAsync, waitTx],
   )
 
+  const mintFromNativeHype = useCallback(
+    async (owner: Address, value: bigint) => {
+      const stakeAmt = (value / KINETIQ_STAKE_STEP) * KINETIQ_STAKE_STEP
+      if (stakeAmt <= 0n) {
+        throw new Error('Amount too small for Kinetiq stake (min 1e-8 HYPE step)')
+      }
+
+      const stakeHash = await writeContractAsync({
+        address: KINETIQ_STAKING,
+        abi: kinetiqStakeAbi,
+        functionName: 'stake',
+        value: stakeAmt,
+        chainId: 999,
+      })
+      await waitTx(stakeHash, 'Staking HYPE → kHYPE (Kinetiq)')
+
+      const khBal = (await publicClient!.readContract({
+        address: KHYPE,
+        abi: erc20Abi,
+        functionName: 'balanceOf',
+        args: [owner],
+      })) as bigint
+
+      return depositLst(owner, khBal)
+    },
+    [depositLst, publicClient, waitTx, writeContractAsync],
+  )
+
   const handlePrimary = async () => {
     if (!isConnected) {
-      const c = preferredEvmConnector(connectors)
-      if (!c) {
-        setStatus({ s: 'err', m: 'Phantom not found — install the extension' })
-        return
-      }
-      connect({ connector: c, chainId: chain.chainId })
+      setWalletMenuOpen(true)
       return
     }
     if (!onChain) {
@@ -338,11 +357,10 @@ export function EvmActionPanel({
         hash = await mintFromNativeEth(owner, assetsWei)
       } else if (chain.id === 'base' || chain.id === 'bnb') {
         hash = await mintFromNativeSwap(owner, assetsWei)
+      } else if (chain.id === 'hype') {
+        hash = await mintFromNativeHype(owner, assetsWei)
       } else {
-        setStatus({
-          s: 'err',
-          m: 'Stake HYPE for kHYPE on Kinetiq first, then mint from LST.',
-        })
+        setStatus({ s: 'err', m: 'Unsupported chain' })
         return
       }
 
@@ -528,11 +546,7 @@ export function EvmActionPanel({
 
         {tab === 'mint' && source === 'native' && chain.id === 'hype' && (
           <p className="evm-hint">
-            Step 1:{' '}
-            <a href="https://kinetiq.xyz/stake-hype" target="_blank" rel="noreferrer">
-              Stake HYPE → kHYPE
-            </a>{' '}
-            on Kinetiq. Then switch to &quot;From kHYPE&quot; and deposit here.
+            One flow: HYPE → kHYPE (Kinetiq stake) → approve → vault deposit.
           </p>
         )}
 
@@ -575,13 +589,7 @@ export function EvmActionPanel({
         <button
           type="button"
           className="cta-primary"
-          disabled={
-            busy ||
-            (isConnected &&
-              onChain &&
-              (!num ||
-                (tab === 'mint' && source === 'native' && chain.id === 'hype')))
-          }
+          disabled={busy || (isConnected && onChain && !num)}
           onClick={() => void handlePrimary()}
           style={{ marginTop: 18 }}
         >
@@ -594,15 +602,17 @@ export function EvmActionPanel({
           ) : !onChain ? (
             <>Switch to {chain.name}</>
           ) : tab === 'mint' ? (
-            source === 'native' && chain.id === 'hype' ? (
-              <>Use From kHYPE after staking</>
-            ) : (
-              <>Mint {chain.symbol}</>
-            )
+            <>Mint {chain.symbol}</>
           ) : (
             <>Redeem to {chain.backing}</>
           )}
         </button>
+
+        <EvmWalletMenu
+          open={walletMenuOpen}
+          onClose={() => setWalletMenuOpen(false)}
+          chainId={chain.chainId}
+        />
       </div>
     </div>
   )

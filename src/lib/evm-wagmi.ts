@@ -1,7 +1,11 @@
 import { createConfig, http, injected } from 'wagmi'
 import { base, bsc, mainnet } from 'wagmi/chains'
-import { defineChain } from 'viem'
-import type { Connector } from 'wagmi'
+import {
+  coinbaseWallet,
+  metaMask,
+  walletConnect,
+} from 'wagmi/connectors'
+import { defineChain, type EIP1193Provider } from 'viem'
 
 export const hyperEvm = defineChain({
   id: 999,
@@ -17,14 +21,66 @@ export const hyperEvm = defineChain({
 
 export const evmWagmiChains = [hyperEvm, mainnet, base, bsc] as const
 
-/** Phantom EVM — uses window.phantom.ethereum, not window.ethereum. */
-export const phantomConnector = injected({ target: 'phantom' })
-
-export function preferredEvmConnector(
-  connectors: readonly Connector[],
-): Connector | undefined {
-  return connectors.find((c) => c.id === 'phantom') ?? connectors[0]
+type InjectedEth = EIP1193Provider & {
+  isRabby?: boolean
+  isTrust?: boolean
+  isTrustWallet?: boolean
+  providers?: InjectedEth[]
 }
+
+type EthWindow = {
+  ethereum?: InjectedEth
+  trustwallet?: { ethereum?: InjectedEth }
+}
+
+function rabbyProvider(window?: EthWindow): EIP1193Provider | undefined {
+  const eth = window?.ethereum
+  if (!eth) return undefined
+  if (eth.isRabby) return eth
+  return eth.providers?.find((p: InjectedEth) => p.isRabby)
+}
+
+function trustProvider(window?: EthWindow): EIP1193Provider | undefined {
+  const tw = window?.trustwallet?.ethereum
+  if (tw) return tw
+  const eth = window?.ethereum
+  if (!eth) return undefined
+  if (eth.isTrust || eth.isTrustWallet) return eth
+  return eth.providers?.find(
+    (p: InjectedEth) => p.isTrust || p.isTrustWallet,
+  )
+}
+
+const wcId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined
+
+const evmConnectors = [
+  injected({ target: 'phantom' }),
+  metaMask(),
+  injected({
+    target: {
+      id: 'rabby',
+      name: 'Rabby',
+      provider: rabbyProvider,
+    },
+  }),
+  coinbaseWallet({ appName: 'stacSOL' }),
+  injected({
+    target: {
+      id: 'trust',
+      name: 'Trust Wallet',
+      provider: trustProvider,
+    },
+  }),
+  injected({ shimDisconnect: true }),
+  ...(wcId
+    ? [
+        walletConnect({
+          projectId: wcId,
+          showQrModal: true,
+        }),
+      ]
+    : []),
+]
 
 function alchemyProxy(chainId: number) {
   const origin =
@@ -34,7 +90,7 @@ function alchemyProxy(chainId: number) {
 
 export const wagmiConfig = createConfig({
   chains: evmWagmiChains,
-  connectors: [phantomConnector],
+  connectors: evmConnectors,
   transports: {
     [hyperEvm.id]: http(hyperEvm.rpcUrls.default.http[0]),
     [mainnet.id]: alchemyProxy(1),
