@@ -576,6 +576,33 @@ body:not([data-theme="ink"]) .theme-toggle .moon { transform: rotate(0deg) scale
   font-size: 12.5px;
   padding: 10px 14px;
 }
+.evm-panel {
+  margin-top: 22px;
+  box-shadow: none;
+}
+.evm-panel .panel-body {
+  padding: 20px 18px 18px;
+}
+.evm-source-toggle {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+.evm-source-toggle .amt-pct {
+  flex: 1;
+  text-align: center;
+}
+.evm-hint {
+  margin: 14px 0 0;
+  font-size: 12.5px;
+  line-height: 1.5;
+  color: var(--ink-muted);
+}
+.evm-hint a {
+  color: var(--accent-deep);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
 
 .dash-h {
   font-family: var(--f-display);

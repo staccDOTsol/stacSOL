@@ -35,7 +35,7 @@ const WrapPage = lazy(() => import('./Wrap.tsx'))
 const Trade = lazy(() => import('./Trade.tsx'))
 const CreateCurve = lazy(() => import('./CreateCurve.tsx'))
 const Launches = lazy(() => import('./Launches.tsx'))
-const Evm = lazy(() => import('./Evm.tsx'))
+const EvmShell = lazy(() => import('./EvmShell.tsx'))
 
 // Derive the WebSocket endpoint from the HTTP RPC URL. @solana/web3.js does
 // this auto-derivation internally too, but doing it here means we can pin
@@ -212,8 +212,8 @@ createRoot(document.getElementById('root')!).render(
           <Launches />
         </Providers>
       ) : isEvm ? (
-        // /evm — EVM vault lander. Live NAV via /api/evm-nav, no wallet needed.
-        <Evm />
+        // /evm — EVM vault lander + wagmi mint/redeem (loaded only on this route).
+        <EvmShell />
       ) : isApp ? (
         // The mint / burn / wrap / position dashboard. Wallet-adapter
         // mounted here only — the marketing landing at `/` stays clean.

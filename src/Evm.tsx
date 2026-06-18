@@ -7,11 +7,12 @@
 
 import { useEffect, useState } from 'react'
 import EditorialNav from './components/EditorialNav'
+import { EvmActionPanel } from './components/EvmActionPanel'
+import EvmWalletPill from './components/EvmWalletPill'
 import { useEvmNav } from './hooks/useEvmNav'
 import {
   EVM_CHAINS,
   explorerAddress,
-  explorerWrite,
   type EvmChainConfig,
 } from './lib/evm-chains'
 
@@ -124,16 +125,9 @@ function ChainCard({
         </div>
       </div>
 
+      <EvmActionPanel chain={chain} nav={nav} />
+
       <div className="evm-card-actions">
-        <a
-          className="btn btn-primary"
-          href={explorerWrite(chain)}
-          target="_blank"
-          rel="noreferrer"
-        >
-          Mint / redeem
-          <span className="arrow">↗</span>
-        </a>
         <a
           className="btn btn-ghost"
           href={explorerAddress(chain)}
@@ -169,7 +163,10 @@ export default function Evm() {
 
   return (
     <>
-      <EditorialNav pathname="/evm" />
+      <EditorialNav
+        pathname="/evm"
+        ctaSlot={<EvmWalletPill label="Connect EVM wallet" />}
+      />
       <main className="dash shell">
         <section style={{ paddingBlock: '32px 28px' }}>
           <div className="eyebrow" style={{ marginBottom: 16 }}>
@@ -257,10 +254,9 @@ export default function Evm() {
             Each vault is an audited ERC-4626 share token.{' '}
             <strong>NAV = totalAssets ÷ totalSupply</strong>. Fees on mint,
             redeem, and transfer shrink supply while backing stays in the vault —
-            so the redemption rate only climbs. Connect your wallet on the target
-            chain, approve the backing LST, and call <code>deposit</code> on the
-            contract via the explorer&apos;s Write tab (or any wallet that speaks
-            ERC-4626).
+            so the redemption rate only climbs. Connect an EVM wallet above, pick
+            a chain card, and mint from native gas token or the backing LST —
+            approve + deposit happen in-wallet. Redeem returns the backing LST.
           </p>
           {data?.fetchedAt && (
             <div
