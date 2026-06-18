@@ -1,11 +1,8 @@
 import { createConfig, http, injected } from 'wagmi'
 import { base, bsc, mainnet } from 'wagmi/chains'
-import {
-  coinbaseWallet,
-  metaMask,
-  walletConnect,
-} from 'wagmi/connectors'
+import { coinbaseWallet, walletConnect } from 'wagmi/connectors'
 import { defineChain, type EIP1193Provider } from 'viem'
+import { phantomProvider } from './evm-connect'
 
 export const hyperEvm = defineChain({
   id: 999,
@@ -54,8 +51,14 @@ function trustProvider(window?: EthWindow): EIP1193Provider | undefined {
 const wcId = import.meta.env.VITE_WALLETCONNECT_PROJECT_ID as string | undefined
 
 const evmConnectors = [
-  injected({ target: 'phantom' }),
-  metaMask(),
+  injected({
+    target: {
+      id: 'phantom',
+      name: 'Phantom',
+      provider: () => phantomProvider(),
+    },
+  }),
+  injected({ target: 'metaMask' }),
   injected({
     target: {
       id: 'rabby',

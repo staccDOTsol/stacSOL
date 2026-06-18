@@ -611,7 +611,6 @@ export function EvmActionPanel({
         <EvmWalletMenu
           open={walletMenuOpen}
           onClose={() => setWalletMenuOpen(false)}
-          chainId={chain.chainId}
         />
       </div>
     </div>
