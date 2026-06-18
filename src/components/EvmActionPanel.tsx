@@ -27,7 +27,11 @@ import {
   LIDO_STETH,
   WSTETH_MAINNET,
 } from '../lib/evm-abi'
-import { switchWalletChain, walletChainError } from '../lib/evm-switch-chain'
+import {
+  ensureWalletOnChain,
+  getWalletChainId,
+  walletChainError,
+} from '../lib/evm-switch-chain'
 import { EvmWalletMenu } from './EvmWalletMenu'
 
 type Tab = 'mint' | 'redeem'
@@ -144,11 +148,7 @@ export function EvmActionPanel({
 
   const switchToChain = useCallback(async () => {
     setStatus({ s: 'busy', m: `Switching to ${chain.name}…` })
-    try {
-      await switchWalletChain(connector, chain.chainId)
-    } catch (e) {
-      throw new Error(walletChainError(e, chain.name, chain.chainId))
-    }
+    await ensureWalletOnChain(connector, chain.chainId, chain.name)
   }, [chain.chainId, chain.name, connector])
 
   const ensureReady = useCallback(async (): Promise<Address | null> => {
@@ -156,18 +156,16 @@ export function EvmActionPanel({
       setWalletMenuOpen(true)
       return null
     }
-    if (chainId !== chain.chainId) {
-      await switchToChain()
-    }
     if (!address) return null
+    await ensureWalletOnChain(connector, chain.chainId, chain.name)
+    const walletChain = await getWalletChainId(connector)
+    if (walletChain !== chain.chainId) {
+      throw new Error(
+        `Wallet is on chain ${walletChain ?? '?'} — switch to ${chain.name} (${chain.chainId}) to continue.`,
+      )
+    }
     return address
-  }, [
-    address,
-    chain.chainId,
-    chainId,
-    isConnected,
-    switchToChain,
-  ])
+  }, [address, chain.chainId, chain.name, connector, isConnected])
 
   const waitTx = useCallback(
     async (hash: Hash, label: string) => {

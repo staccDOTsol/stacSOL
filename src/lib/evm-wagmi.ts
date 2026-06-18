@@ -74,7 +74,6 @@ const evmConnectors = [
       provider: trustProvider,
     },
   }),
-  injected({ shimDisconnect: true }),
   ...(wcId
     ? [
         walletConnect({
@@ -94,6 +93,9 @@ function alchemyProxy(chainId: number) {
 export const wagmiConfig = createConfig({
   chains: evmWagmiChains,
   connectors: evmConnectors,
+  // Phantom EVM breaks on eth_chainId — phantom-provider.ts caches chainChanged.
+  multiInjectedProviderDiscovery: false,
+  syncConnectedChain: true,
   transports: {
     [hyperEvm.id]: http(hyperEvm.rpcUrls.default.http[0]),
     [mainnet.id]: alchemyProxy(1),

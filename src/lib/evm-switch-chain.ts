@@ -48,6 +48,49 @@ export function walletChainError(
   return `Could not switch to ${chainName}. Check your wallet supports this network.`
 }
 
+export async function getWalletChainId(
+  connector: Connector | undefined,
+): Promise<number | null> {
+  if (!connector) return null
+  try {
+    const provider = (await connector.getProvider()) as Eip1193Provider
+    const hex = (await provider.request({ method: 'eth_chainId' })) as string
+    const id = parseInt(hex, 16)
+    return Number.isFinite(id) ? id : null
+  } catch {
+    return null
+  }
+}
+
+async function waitForWalletChain(
+  provider: Eip1193Provider,
+  targetChainId: number,
+  timeoutMs = 12_000,
+): Promise<void> {
+  const start = Date.now()
+  while (Date.now() - start < timeoutMs) {
+    const hex = (await provider.request({ method: 'eth_chainId' })) as string
+    const current = parseInt(hex, 16)
+    if (current === targetChainId) return
+    await new Promise((r) => setTimeout(r, 250))
+  }
+  throw new Error(
+    `Wallet stayed on chain ${await getWalletChainIdFromProvider(provider)} — approve the network switch in your wallet.`,
+  )
+}
+
+async function getWalletChainIdFromProvider(
+  provider: Eip1193Provider,
+): Promise<number | 'unknown'> {
+  try {
+    const hex = (await provider.request({ method: 'eth_chainId' })) as string
+    const id = parseInt(hex, 16)
+    return Number.isFinite(id) ? id : 'unknown'
+  } catch {
+    return 'unknown'
+  }
+}
+
 /**
  * EIP-1193 switch with wallet_addEthereumChain fallback (required for HyperEVM 999
  * and other chains wallets don't ship with).
@@ -63,6 +106,9 @@ export async function switchWalletChain(
   const provider = (await connector.getProvider()) as Eip1193Provider
   const hexId = toHexChainId(targetChainId)
 
+  const current = await getWalletChainIdFromProvider(provider)
+  if (current === targetChainId) return
+
   const trySwitch = () =>
     provider.request({
       method: 'wallet_switchEthereumChain',
@@ -71,7 +117,6 @@ export async function switchWalletChain(
 
   try {
     await trySwitch()
-    return
   } catch (switchErr: unknown) {
     const code = (switchErr as { code?: number })?.code
     if (code === 4001) {
@@ -95,5 +140,20 @@ export async function switchWalletChain(
     } catch {
       /* chainChanged event should still fire after add */
     }
+  }
+
+  await waitForWalletChain(provider, targetChainId)
+}
+
+/** Switch if needed and block until the wallet provider reports the target chain. */
+export async function ensureWalletOnChain(
+  connector: Connector | undefined,
+  targetChainId: number,
+  chainName: string,
+): Promise<void> {
+  try {
+    await switchWalletChain(connector, targetChainId)
+  } catch (e) {
+    throw new Error(walletChainError(e, chainName, targetChainId))
   }
 }
