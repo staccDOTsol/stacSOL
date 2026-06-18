@@ -32,7 +32,7 @@ const NAV_LINKS = [
   { id: '/app', label: 'App' },
   { id: '/portfolio', label: 'Portfolio' },
   { id: '/leaderboard', label: 'Leaderboard' },
-  { id: 'https://yal.fun', label: 'YAL.fun', external: true },
+  { id: '/evm', label: 'EVM' },
   { id: '/faq', label: 'FAQ' },
   { id: '/terms', label: 'Terms' },
 ]
@@ -46,7 +46,6 @@ const MORE_LINKS = [
   { id: '/liqmonsta', label: 'Liqmonsta', sub: 'Auto-rebalance LP smasher' },
   { id: '/guide', label: 'Guide', sub: 'SOL of the thystaccfloweth' },
   { id: '/baitscope', label: 'Baitscope', sub: 'Flywheel feed · trades & burns' },
-  { id: '/evm', label: 'Why not EVM', sub: 'Chain thesis · Solana-only primitives' },
 ]
 
 function ThemeButton() {
