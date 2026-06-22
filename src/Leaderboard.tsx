@@ -17,6 +17,7 @@ import { fmtAmount, shortPk } from './lib/format'
 import { WalletIdentity, DoxxToggle } from './components/walletDoxx'
 import EditorialNav from './components/EditorialNav'
 import WalletPill from './components/WalletPill'
+import { ReferralLeaderboard } from './components/ReferralLeaderboard'
 
 const REFRESH_MS = 60_000
 const SEARCH_DEBOUNCE_MS = 250
@@ -583,6 +584,12 @@ export default function HoldersLeaderboard() {
           )}
         </div>
       )}
+
+      {/* Gamified referral leaderboard — real third-party referrers (house
+          wallets excluded by default) + the connected wallet's share link. */}
+      <div className="mb-6">
+        <ReferralLeaderboard />
+      </div>
 
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">

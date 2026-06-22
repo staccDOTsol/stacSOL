@@ -1,7 +1,15 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node'
 import { ensureSchema, getPool, LIVE_NAV_SQL } from './_db.js'
 
+// House wallets — excluded from the public referrer board by default. The
+// marketing/default referrer collects the 50% fee share on every mint with no
+// `?ref=` link (self-funded marketing), and the manager keypair runs the burn
+// loop / self-refers; neither is a real third-party referrer, so counting them
+// drowns out the actual leaderboard. Pass `?includeHouse=true` to show them.
 const MARKETING_REFERRER = 'Bq4KMaVvzemx4tyfoyhZ7Kooo494GEv1xq9MLgRkfF6j'
+const MANAGER_WALLET = 'WzMaL78srutrF6CsxEkWuhMaDF5HZA6jNRaEPengqpb'
+// These are developer-controlled constants (not user input) — safe to inline.
+const HOUSE_SQL_LIST = `'${MARKETING_REFERRER}','${MANAGER_WALLET}'`
 
 // 6.9% Token-2022 transfer fee on stacSOL. When converting stacSOL atoms
 // to "realizable SOL", we apply (1 - fee) to the NAV — that's what a holder
@@ -29,11 +37,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
       Math.max(parseInt(String(req.query.limit ?? '50'), 10) || 50, 1),
       500,
     )
-    const includeMarketing = String(req.query.includeMarketing ?? 'true') !== 'false'
+    // Default board = real third-party referrers only (house wallets out).
+    // `?includeHouse=true` (or the legacy `?includeMarketing=true`) shows them.
+    const includeHouse =
+      String(req.query.includeHouse ?? 'false') === 'true' ||
+      String(req.query.includeMarketing ?? 'false') === 'true'
 
-    const where = includeMarketing ? '' : 'WHERE rc.referrer != $2'
+    // Same exclusion applied to BOTH the row list and the totals strip, so
+    // the headline "N referrers · X SOL paid" matches the rows shown.
+    const rowsWhere = includeHouse ? '' : `WHERE rc.referrer NOT IN (${HOUSE_SQL_LIST})`
+    const totalsWhere = includeHouse ? '' : `WHERE referrer NOT IN (${HOUSE_SQL_LIST})`
     const params: (string | number)[] = [limit]
-    if (!includeMarketing) params.push(MARKETING_REFERRER)
 
     // LEFT JOIN holder_summary so each referrer row carries is_doxxed +
     // display_name. Referrers who never held / interacted on-chain won't
@@ -51,7 +65,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         hs.display_name                  AS display_name
       FROM referral_credits rc
       LEFT JOIN holder_summary hs ON hs.wallet = rc.referrer
-      ${where}
+      ${rowsWhere}
       GROUP BY rc.referrer, hs.is_doxxed, hs.display_name
       ORDER BY SUM(rc.fee_stacsol) DESC
       LIMIT $1
@@ -66,6 +80,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         SUM(fee_stacsol)::TEXT    AS total_fee_stacsol,
         SUM(sol_lamports)::TEXT   AS total_sol_referred
       FROM referral_credits
+      ${totalsWhere}
     `
     const totals = await getPool().query(totalSql)
 
@@ -77,6 +92,8 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     )
     res.status(200).json({
       marketingReferrer: MARKETING_REFERRER,
+      managerWallet: MANAGER_WALLET,
+      includeHouse,
       navRate, // SOL per stacSOL, used client-side to value fee_stacsol
       payoutFraction: STAC_PAYOUT_FRACTION, // 0.931 — captures the 6.9% T22 fee
       totals: {
@@ -96,6 +113,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
         firstAt: Number(row.first_at),
         lastAt: Number(row.last_at),
         isMarketing: row.referrer === MARKETING_REFERRER,
+        isManager: row.referrer === MANAGER_WALLET,
         isDoxxed: row.is_doxxed === true,
         displayName: row.display_name ?? null,
       })),

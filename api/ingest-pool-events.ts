@@ -60,6 +60,12 @@ const WD_USER_ATA_IDX = 3
 const WD_RECIPIENT_IDX = 5
 
 const MAX_SIGS_PER_PASS = 250
+// Max tail pages per run. The tail loop pages from head down to the stored
+// cursor; this bounds a single run. 400 pages × 250 = 100k signatures — far
+// more than any realistic backlog (incl. a multi-week cron outage), so the
+// loop normally exits early when it reaches the cursor. Overridable via env
+// for an unusually deep one-time catch-up.
+const TAIL_MAX_PAGES = Number(process.env.TAIL_MAX_PAGES ?? 400)
 const MAX_TX_RPC_CONCURRENCY = 5
 const ACCOUNT_BATCH = 50
 
@@ -684,16 +690,46 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     const eventAffected = new Set<string>()
 
     if (cursor.newest_sig) {
-      const tail = await getSignaturesForAddress(endpoint, POOL, {
-        until: cursor.newest_sig,
-        limit: MAX_SIGS_PER_PASS,
-      })
-      tailFetched = tail.length
-      scanned += tail.length
-      const r = await processBatch(endpoint, tail)
-      inserted += r.inserted
-      r.affected.forEach((w) => eventAffected.add(w))
-      if (tail.length > 0) newNewest = tail[0].signature
+      // Paginate the tail from head DOWN to the stored cursor. A single
+      // getSignaturesForAddress({until}) page only returns the newest
+      // MAX_SIGS_PER_PASS sigs — if more than that landed since the last
+      // run (e.g. after a long outage), the page never reaches `until` and
+      // naively setting newNewest = page[0] would orphan every signature
+      // between (head - limit) and the cursor forever. Instead we page with
+      // `before` (keeping `until` pinned so the RPC stops at the cursor) and
+      // only advance newNewest once the gap is fully drained. Inserts are
+      // idempotent on (signature, ix_index), so re-scanning is harmless.
+      let before: string | undefined
+      let head: string | null = null
+      let reachedCursor = false
+      for (let p = 0; p < TAIL_MAX_PAGES; p++) {
+        const page = await getSignaturesForAddress(endpoint, POOL, {
+          until: cursor.newest_sig,
+          before,
+          limit: MAX_SIGS_PER_PASS,
+        })
+        if (page.length === 0) {
+          reachedCursor = true
+          break
+        }
+        tailFetched += page.length
+        scanned += page.length
+        const r = await processBatch(endpoint, page)
+        inserted += r.inserted
+        r.affected.forEach((w) => eventAffected.add(w))
+        if (p === 0) head = page[0].signature
+        before = page[page.length - 1].signature
+        if (page.length < MAX_SIGS_PER_PASS) {
+          reachedCursor = true
+          break
+        }
+      }
+      // Only advance the cursor to head once the gap is fully drained.
+      // If we ran out of page budget mid-gap, keep newest_sig unchanged so
+      // the next run re-drains from a fresh head down to the same cursor —
+      // re-scanning is idempotent, and this guarantees we never orphan the
+      // undrained middle (the original bug).
+      if (reachedCursor && head) newNewest = head
     } else {
       const seed = await getSignaturesForAddress(endpoint, POOL, {
         limit: MAX_SIGS_PER_PASS,

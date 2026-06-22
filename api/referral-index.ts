@@ -30,6 +30,9 @@ const MANAGER_FEE_ACCOUNT_INDEX = 5
 const REFERRER_ACCOUNT_INDEX = 6
 
 const MAX_SIGS_PER_PASS = 150
+// Max tail pages per run (paginate head→cursor). 400 × 150 = 60k sigs, far
+// beyond any realistic backlog incl. a multi-week outage.
+const TAIL_MAX_PAGES = Number(process.env.TAIL_MAX_PAGES ?? 400)
 const MAX_TX_RPC_CONCURRENCY = 5
 
 interface IndexerCursor {
@@ -319,15 +322,37 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     let backfillDone = cursor.backfill_done
 
     if (cursor.newest_sig) {
-      const tail = await getSignaturesForAddress(endpoint, POOL, {
-        until: cursor.newest_sig,
-        limit: MAX_SIGS_PER_PASS,
-      })
-      tailFetched = tail.length
-      scanned += tail.length
-      const r = await processBatch(endpoint, tail)
-      inserted += r.inserted
-      if (tail.length > 0) newNewest = tail[0].signature
+      // Paginate the tail from head down to the stored cursor. A single
+      // {until} page only returns the newest MAX_SIGS_PER_PASS sigs; if more
+      // landed since the last run, naively setting newNewest = page[0] would
+      // orphan every sig in between forever. Page with `before` (cursor pinned
+      // via `until`) and only advance once the gap is fully drained. Inserts
+      // are idempotent so re-scanning is harmless. (Same fix as ingest-pool-events.)
+      let before: string | undefined
+      let head: string | null = null
+      let reachedCursor = false
+      for (let p = 0; p < TAIL_MAX_PAGES; p++) {
+        const page = await getSignaturesForAddress(endpoint, POOL, {
+          until: cursor.newest_sig,
+          before,
+          limit: MAX_SIGS_PER_PASS,
+        })
+        if (page.length === 0) {
+          reachedCursor = true
+          break
+        }
+        tailFetched += page.length
+        scanned += page.length
+        const r = await processBatch(endpoint, page)
+        inserted += r.inserted
+        if (p === 0) head = page[0].signature
+        before = page[page.length - 1].signature
+        if (page.length < MAX_SIGS_PER_PASS) {
+          reachedCursor = true
+          break
+        }
+      }
+      if (reachedCursor && head) newNewest = head
     } else {
       const seed = await getSignaturesForAddress(endpoint, POOL, {
         limit: MAX_SIGS_PER_PASS,
