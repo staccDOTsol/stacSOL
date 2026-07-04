@@ -1,3 +1,4 @@
 ansem-aggr/*
 !ansem-aggr/dist
 ansem-watch/*.db*
+ansem-watch/node_modules

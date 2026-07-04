@@ -201,6 +201,13 @@ let lastMsg = 0, mode = "?";
 // ---------- renderers ----------
 function renderOverview(d) {
   prevPrice = price; price = d.price;
+  if (d.symbol) {
+    document.title = d.symbol + " CARNAGE WATCH";
+    const t = document.querySelector("#hdr .title");
+    if (t) t.innerHTML = '<span class="skull">\u2620</span> $' + d.symbol + " CARNAGE WATCH";
+    const sub = document.querySelector("#hdr .title + div");
+    if (sub && d.address) sub.textContent = (d.name || "") + " \u00b7 " + d.address.slice(0,4) + "\u2026" + d.address.slice(-4);
+  }
   const el = $("price");
   el.textContent = "$" + d.price.toFixed(5);
   el.className = prevPrice == null ? "" : d.price >= prevPrice ? "up" : "down";
@@ -386,5 +393,6 @@ setInterval(pollCandles, 60000);
 setInterval(heartbeat, 2000);
 window.addEventListener("resize", drawChart);
 </script>
+<script src="/paywall.js"></script>
 </body>
 </html>

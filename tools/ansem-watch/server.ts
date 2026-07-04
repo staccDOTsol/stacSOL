@@ -6,13 +6,17 @@
 // every event is persisted to ansem.db so PnL/flow survive restarts.
 
 import { Database } from "bun:sqlite";
+// billing lives in a sidecar process (subs-server.ts, :4478) — proxied below
+const SUBS_URL = process.env.SUBS_URL || "http://127.0.0.1:4478";
 
 const KEY = process.env.BIRDEYE_API_KEY || "3fa616d53b45415c8bd550e7820b3160";
-// any ticker: WATCH_MINT=<mint> bun run server.ts (defaults to $ANSEM)
-const MINT =
+// any ticker: WATCH_MINT env, CLI arg, or POST /api/watch {mint} at runtime.
+// Last runtime switch persists in DATA_DIR/current-mint.
+const DEFAULT_MINT = "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump";
+let MINT =
   process.env.WATCH_MINT ||
   Bun.argv[2] ||
-  "9cRCn9rGT8V2imeM2BaKs13yhMEais3ruM3rPvTGpump";
+  DEFAULT_MINT;
 const WSOL = "So11111111111111111111111111111111111111112";
 const BE = "https://public-api.birdeye.so";
 const PORT = 4477;
@@ -20,8 +24,20 @@ const HEADERS = { "X-API-KEY": KEY, "x-chain": "solana", accept: "application/js
 
 // ---------- db (one file per watched mint; DATA_DIR for fly volumes) ----------
 const DATA_DIR = process.env.DATA_DIR || new URL(".", import.meta.url).pathname;
-const db = new Database(`${DATA_DIR}/watch-${MINT.slice(0, 8)}.db`);
-db.exec(`
+
+// runtime-switched mint takes precedence over env default
+try {
+  const saved = require("fs").readFileSync(`${DATA_DIR}/current-mint`, "utf8").trim();
+  if (saved && !process.env.WATCH_MINT && !Bun.argv[2]) MINT = saved;
+} catch {}
+
+let db: Database;
+let insTrade: any, insLiq: any, insTick: any, insHolder: any;
+
+function initDb(mint: string) {
+  if (db) db.close();
+  db = new Database(`${DATA_DIR}/watch-${mint.slice(0, 8)}.db`);
+  db.exec(`
   PRAGMA journal_mode = WAL;
   CREATE TABLE IF NOT EXISTS trades (
     tx_hash TEXT PRIMARY KEY, block_time INTEGER, owner TEXT, side TEXT,
@@ -33,18 +49,22 @@ db.exec(`
     k TEXT PRIMARY KEY, tx_hash TEXT, block_time INTEGER, owner TEXT,
     kind TEXT, usd REAL, source TEXT
   );
+  CREATE INDEX IF NOT EXISTS idx_liq_owner ON liq_events(owner);
   CREATE TABLE IF NOT EXISTS price_ticks (t INTEGER, price REAL);
   CREATE TABLE IF NOT EXISTS holders (
     snap_time INTEGER, owner TEXT, ui_amount REAL, rank INTEGER,
     PRIMARY KEY (snap_time, owner)
   );
 `);
-const insTrade = db.prepare(
-  "INSERT OR IGNORE INTO trades VALUES ($h, $t, $o, $side, $usd, $tok, $src, $pool)",
-);
-const insLiq = db.prepare("INSERT OR IGNORE INTO liq_events VALUES ($k, $h, $t, $o, $kind, $usd, $src)");
-const insTick = db.prepare("INSERT INTO price_ticks VALUES ($t, $p)");
-const insHolder = db.prepare("INSERT OR IGNORE INTO holders VALUES ($t, $o, $a, $r)");
+  insTrade = db.prepare(
+    "INSERT OR IGNORE INTO trades VALUES ($h, $t, $o, $side, $usd, $tok, $src, $pool)",
+  );
+  insLiq = db.prepare("INSERT OR IGNORE INTO liq_events VALUES ($k, $h, $t, $o, $kind, $usd, $src)");
+  insTick = db.prepare("INSERT INTO price_ticks VALUES ($t, $p)");
+  insHolder = db.prepare("INSERT OR IGNORE INTO holders VALUES ($t, $o, $a, $r)");
+}
+
+initDb(MINT);
 
 // ---------- live state ----------
 let price = 0;
@@ -78,9 +98,13 @@ const KNOWN_SOURCES = [
 const srcToPair = (s: string) => s.toUpperCase().replace(/[^A-Z0-9_]/g, "_");
 
 // defi sources seen live — feeds /api/products so the aggr client paints per-DEX markets
-const seenSources = new Set<string>(
-  (db.query("SELECT DISTINCT source FROM trades").all() as any[]).map((r) => r.source).filter(Boolean),
-);
+let seenSources = new Set<string>();
+function loadSeenSources() {
+  seenSources = new Set(
+    (db.query("SELECT DISTINCT source FROM trades").all() as any[]).map((r) => r.source).filter(Boolean),
+  );
+}
+loadSeenSources();
 
 function normTrade(t: any) {
   if (t.source) seenSources.add(t.source);
@@ -254,15 +278,18 @@ async function pollHolders() {
 }
 
 // ---------- birdeye streaming (used automatically if the key's package allows it) ----------
+let birdeyeWs: WebSocket | null = null;
 function tryBirdeyeWS() {
   let gotData = false;
+  const wsMint = MINT;
   try {
     const ws = new WebSocket(`wss://public-api.birdeye.so/socket/solana?x-api-key=${KEY}`, {
       protocols: ["echo-protocol"],
       headers: { Origin: "ws://public-api.birdeye.so" },
     } as any);
+    birdeyeWs = ws;
     ws.onopen = () => {
-      ws.send(JSON.stringify({ type: "SUBSCRIBE_TXS", data: { queryType: "simple", address: MINT } }));
+      ws.send(JSON.stringify({ type: "SUBSCRIBE_TXS", data: { queryType: "simple", address: wsMint } }));
     };
     ws.onmessage = (e) => {
       const msg = JSON.parse(String(e.data));
@@ -274,7 +301,11 @@ function tryBirdeyeWS() {
         ws.close();
       }
     };
-    ws.onclose = () => { if (!gotData) mode = "poll"; else setTimeout(tryBirdeyeWS, 2000); };
+    ws.onclose = () => {
+      if (wsMint !== MINT) return; // switched away — the new mint has its own socket
+      if (!gotData) mode = "poll";
+      else setTimeout(tryBirdeyeWS, 2000);
+    };
     ws.onerror = () => {};
   } catch { mode = "poll"; }
 }
@@ -304,11 +335,16 @@ const server = Bun.serve({
     if (p === "/dash" || p === "/dash/") {
       return new Response(Bun.file(INDEX), { headers: { "content-type": "text/html" } });
     }
-    if (hasAggr && !p.startsWith("/api/")) {
-      // aggr terminal at / — static files with SPA fallback
+    if (hasAggr && !p.startsWith("/api/") && p !== "/paywall.js" && p !== "/plan.json") {
+      // aggr terminal at / — static files with SPA fallback. no-cache because
+      // aggr's build ids are per-day, not per-content: same-day rebuilds reuse
+      // filenames and would poison browser caches otherwise.
+      const NOCACHE = { "cache-control": "no-cache" };
       const f = Bun.file(`${AGGR_DIST}${p === "/" ? "/index.html" : p}`);
-      if (await f.exists()) return new Response(f);
-      if (!p.includes(".")) return new Response(aggrIndex, { headers: { "content-type": "text/html" } });
+      if (await f.exists()) return new Response(f, { headers: NOCACHE });
+      if (!p.includes(".")) {
+        return new Response(aggrIndex, { headers: { "content-type": "text/html", ...NOCACHE } });
+      }
       return new Response("not found", { status: 404 });
     }
     if (p === "/" || p === "/index.html") {
@@ -320,6 +356,40 @@ const server = Bun.serve({
     if (p === "/api/debug") {
       console.log(`[debug] ${url.search}`);
       return new Response("ok", { headers: CORS });
+    }
+    if (p.startsWith("/api/sub/") || p === "/paywall.js" || p === "/plan.json") {
+      try {
+        const r = await fetch(SUBS_URL + p + url.search, {
+          method: req.method,
+          headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
+          body: req.method === "POST" ? await req.text() : undefined,
+          signal: AbortSignal.timeout(20000),
+        });
+        const h = new Headers(r.headers);
+        h.set("access-control-allow-origin", "*");
+        return new Response(await r.arrayBuffer(), { status: r.status, headers: h });
+      } catch (e) {
+        return Response.json({ enabled: false, subscribed: false, error: "billing sidecar unavailable" }, { headers: CORS });
+      }
+    }
+    if (p === "/api/watch" && req.method === "POST") {
+      let body: any;
+      try { body = await req.json(); } catch { return Response.json({ error: "bad json" }, { status: 400, headers: CORS }); }
+      const mint = String(body?.mint ?? "").trim();
+      if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(mint)) {
+        return Response.json({ error: "not a valid solana mint" }, { status: 400, headers: CORS });
+      }
+      if (mint !== MINT) {
+        // verify birdeye knows it before committing
+        try {
+          const ov = (await be(`/defi/token_overview?address=${mint}`)).data;
+          if (!ov?.symbol && !ov?.price) throw new Error("no data");
+          switchMint(mint, ov);
+        } catch (e) {
+          return Response.json({ error: `birdeye has no data for that mint (${e})` }, { status: 422, headers: CORS });
+        }
+      }
+      return Response.json({ ok: true, mint: MINT, symbol: overview?.symbol ?? "" }, { headers: CORS });
     }
     if (p === "/api/products") {
       // defi labels for the aggr client: one "market" per DEX source
@@ -351,6 +421,36 @@ const server = Bun.serve({
   },
 });
 
+// ---------- runtime mint switch ----------
+function switchMint(mint: string, ov: any) {
+  console.log(`[watch] switching ${MINT} -> ${mint} (${ov?.symbol})`);
+  MINT = mint;
+  try { require("fs").writeFileSync(`${DATA_DIR}/current-mint`, mint); } catch {}
+
+  // swap storage + reset all per-token state
+  initDb(MINT);
+  loadSeenSources();
+  overview = ov;
+  price = ov?.price ?? 0;
+  candlesCache = { data: { items: [] } };
+  holdersCache = [];
+  mode = "starting";
+
+  // drop the old birdeye stream; the new one subscribes to the new mint
+  try { birdeyeWs?.close(); } catch {}
+  birdeyeWs = null;
+  tryBirdeyeWS();
+
+  // warm caches right away
+  pollCandles();
+  pollHolders();
+  pollTrades();
+  pollLiq();
+
+  // tell connected clients to start over
+  publish({ type: "reset", data: { mint: MINT, symbol: ov?.symbol ?? "" } });
+}
+
 // ---------- boot ----------
 tryBirdeyeWS();
 await pollOverview();
@@ -363,6 +463,6 @@ setInterval(pollLiq, 5000);
 setInterval(pollOverview, 5000);
 setInterval(pollCandles, 60000);
 setInterval(pollHolders, 45000);
-setInterval(() => publish({ type: "stats", data: { boards: leaderboard(), flow: flowStats() } }), 5000);
+setInterval(() => publish({ type: "stats", data: { boards: leaderboard(), flow: flowStats() } }), 15000);
 
 console.log(`token-watch up on http://localhost:${PORT} — mint ${MINT} (db: watch-${MINT.slice(0, 8)}.db, ingest mode pending: ${mode})`);
