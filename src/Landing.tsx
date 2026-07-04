@@ -7,9 +7,12 @@
 // only (small JSON, edge-cached). All CTAs link to /app where the heavy
 // bundle loads on demand.
 
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import EditorialNav from './components/EditorialNav'
 import { MINT, POOL } from './lib/constants'
+import { accrue, useNowMs } from './hooks/useNow'
+
+const FEE = 0.069
 
 // -----------------------------------------------------------------------------
 // Live perf hook — derives doubling time and "SOL to print $100/day" from
@@ -19,6 +22,9 @@ import { MINT, POOL } from './lib/constants'
 
 interface PerfState {
   rate: number | null
+  /** Timestamp of the last REAL rate anchor (fetch or websocket push) —
+   *  the per-second accrual tickers extrapolate forward from this. */
+  rateTs: number
   dailyRate: number | null
   doublingDays: number | null
   solFor100: number | null
@@ -27,18 +33,26 @@ interface PerfState {
   liveRate: boolean
   liveHistory: boolean
   livePrice: boolean
+  /** Indexed rate history — used by the counterfactual panels to look up
+   *  what the redemption rate actually was N days ago. */
+  history: { ts: number; rate: number }[]
 }
 
 const INITIAL: PerfState = {
   rate: null,
+  rateTs: 0,
   dailyRate: null,
   doublingDays: null,
   solFor100: null,
-  solUsd: 222,
+  // Fallback spot only — used when the client-side CoinGecko fetch fails
+  // (offline localnet, rate limit). The UI marks the derived numbers "est."
+  // whenever this fallback is in play (livePrice === false).
+  solUsd: 82,
   loading: true,
   liveRate: false,
   liveHistory: false,
   livePrice: false,
+  history: [],
 }
 
 // Public Solana RPC — CORS-open, no API key needed. We use it instead of
@@ -47,11 +61,17 @@ const INITIAL: PerfState = {
 // aren't running, so /api/* returns 404. Direct RPC works in dev and prod.
 const PUBLIC_RPC = 'https://solana-rpc.publicnode.com'
 
+interface LiveRateParts {
+  rate: number
+  totalLamports: bigint
+  supply: bigint
+}
+
 /** JSON-RPC getMultipleAccounts → decodes the SPL stake-pool struct and the
  *  Token-2022 mint to compute the current redemption rate exactly the same
  *  way lib/pool.ts does server-side. Returns null on any failure (CORS,
  *  network, decode) so the UI can show "—" instead of a fake rate. */
-async function fetchLiveRate(): Promise<number | null> {
+async function fetchLiveRate(): Promise<LiveRateParts | null> {
   try {
     const body = {
       jsonrpc: '2.0',
@@ -89,7 +109,11 @@ async function fetchLiveRate(): Promise<number | null> {
     const mdv = new DataView(mintData.buffer, mintData.byteOffset, mintData.byteLength)
     const supply = mdv.getBigUint64(36, true)
     if (supply === 0n) return null
-    return Number(totalLamports) / Number(supply)
+    return {
+      rate: Number(totalLamports) / Number(supply),
+      totalLamports,
+      supply,
+    }
   } catch {
     return null
   }
@@ -150,6 +174,11 @@ export { findRealizedDailyRate, MAX_DISPLAYED_APR_PCT, PREFERRED_SPAN_DAYS }
 
 function useLivePerf(refreshMs = 30_000): PerfState {
   const [state, setState] = useState<PerfState>(INITIAL)
+  // Latest decoded account components — shared between the poll path and
+  // the websocket path so a mint-only notification can still recompute the
+  // rate against the last known total_lamports (and vice versa).
+  const lamportsRef = useRef<bigint | null>(null)
+  const supplyRef = useRef<bigint | null>(null)
 
   useEffect(() => {
     // Track the latest fetch generation so an in-flight call from a previous
@@ -166,11 +195,14 @@ function useLivePerf(refreshMs = 30_000): PerfState {
       const stale = () => cancelledMount || myGen !== generation
 
       // 1. Live NAV — direct RPC. Authoritative; doesn't depend on /api/*.
-      const rate = await fetchLiveRate()
+      const parts = await fetchLiveRate()
       if (stale()) return
-      if (rate != null) {
-        next.rate = rate
+      if (parts != null) {
+        next.rate = parts.rate
+        next.rateTs = Date.now()
         next.liveRate = true
+        lamportsRef.current = parts.totalLamports
+        supplyRef.current = parts.supply
       }
 
       // 2. Historical rate trajectory → realised compound daily yield +
@@ -182,8 +214,12 @@ function useLivePerf(refreshMs = 30_000): PerfState {
         if (r.ok) {
           const rows: { ts: number; rate: number }[] = await r.json()
           if (Array.isArray(rows) && rows.length > 0) {
+            next.history = rows
             const last = rows[rows.length - 1]
-            if (!next.rate && last.rate > 0) next.rate = last.rate
+            if (!next.rate && last.rate > 0) {
+              next.rate = last.rate
+              next.rateTs = Date.now()
+            }
             const found = findRealizedDailyRate(rows)
             if (found) {
               next.dailyRate = found.dailyRate
@@ -234,11 +270,95 @@ function useLivePerf(refreshMs = 30_000): PerfState {
     }
   }, [refreshMs])
 
+  // Realtime stream — raw JSON-RPC websocket (no web3.js import; this page
+  // deliberately ships without the wallet-adapter chunk). accountSubscribe
+  // on the stake pool + the mint: every burn-loop crank / deposit / burn
+  // re-anchors the displayed rate the moment it lands on chain.
+  useEffect(() => {
+    let ws: WebSocket | null = null
+    let closed = false
+    let retry: ReturnType<typeof setTimeout> | null = null
+    let poolSub: number | null = null
+    let mintSub: number | null = null
+
+    const push = () => {
+      const lamports = lamportsRef.current
+      const supply = supplyRef.current
+      if (lamports == null || supply == null || supply === 0n) return
+      const rate = Number(lamports) / Number(supply)
+      setState(s => ({ ...s, rate, rateTs: Date.now(), liveRate: true }))
+    }
+
+    const connect = () => {
+      if (closed) return
+      try {
+        ws = new WebSocket(PUBLIC_RPC.replace(/^http/i, 'ws'))
+      } catch {
+        return
+      }
+      ws.onopen = () => {
+        const sub = (id: number, pk: string) =>
+          ws?.send(
+            JSON.stringify({
+              jsonrpc: '2.0',
+              id,
+              method: 'accountSubscribe',
+              params: [pk, { encoding: 'base64', commitment: 'processed' }],
+            }),
+          )
+        sub(1, POOL.toBase58())
+        sub(2, MINT.toBase58())
+      }
+      ws.onmessage = ev => {
+        try {
+          const m = JSON.parse(ev.data as string)
+          if (m.id === 1 && typeof m.result === 'number') poolSub = m.result
+          else if (m.id === 2 && typeof m.result === 'number') mintSub = m.result
+          else if (m.method === 'accountNotification') {
+            const b64 = m.params?.result?.value?.data?.[0]
+            if (typeof b64 !== 'string') return
+            const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+            const dv = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
+            if (m.params.subscription === poolSub && bytes.length >= 266) {
+              lamportsRef.current = dv.getBigUint64(258, true)
+              push()
+            } else if (m.params.subscription === mintSub && bytes.length >= 44) {
+              supplyRef.current = dv.getBigUint64(36, true)
+              push()
+            }
+          }
+        } catch {
+          /* malformed frame — ignore */
+        }
+      }
+      ws.onclose = () => {
+        if (!closed) retry = setTimeout(connect, 5_000)
+      }
+      ws.onerror = () => {
+        try {
+          ws?.close()
+        } catch {
+          /* already closed */
+        }
+      }
+    }
+    connect()
+    return () => {
+      closed = true
+      if (retry) clearTimeout(retry)
+      try {
+        ws?.close()
+      } catch {
+        /* already closed */
+      }
+    }
+  }, [])
+
   return state
 }
 
 // -----------------------------------------------------------------------------
-// Static redemption-rate display.
+// Accruing redemption-rate display.
 //
 // Previously this surface ran a `NavTicker` that bumped the rendered value by
 // `Math.random() * 0.0000018` every 1.1s ("tiny +ε pip animation so the rate
@@ -246,13 +366,15 @@ function useLivePerf(refreshMs = 30_000): PerfState {
 // climbed even during stretches with zero protocol volume, which is
 // misleading: the rate only moves on (a) per-epoch stake yield via Sanctum's
 // stake pool and (b) the 5-minute burn-loop reconciliation. Between those
-// events it is genuinely flat. Render the actual fetched value with no
-// extrapolation — the surrounding copy still says "climbing" / "↑" because
-// the long-run trajectory is monotonic up, but we no longer fake the per-
-// second motion.
+// events it is genuinely flat. So: this renders the REAL on-chain value
+// only — no extrapolation — but "real" now means streamed, not polled: the
+// accountSubscribe websocket in useLivePerf re-renders this the moment a
+// burn-loop crank / deposit / out-of-band burn lands. Anything labeled
+// live on this site reflects chain state; the accruing projections live
+// exclusively in the MagickPanels below, labeled as projections.
 // -----------------------------------------------------------------------------
-function NavValue({ rate }: { rate: number | null }) {
-  if (rate == null) {
+function NavValue({ perf }: { perf: PerfState }) {
+  if (perf.rate == null) {
     return (
       <span className="mono tabular" style={{ color: 'var(--ink-muted)' }}>
         —
@@ -261,8 +383,160 @@ function NavValue({ rate }: { rate: number | null }) {
   }
   return (
     <span className="mono tabular" style={{ color: 'var(--accent-deep)' }}>
-      {rate.toFixed(6)}
+      {perf.rate.toFixed(9)}
     </span>
+  )
+}
+
+// -----------------------------------------------------------------------------
+// The magick — counterfactual FOMO panels.
+//
+// "If I'd minted X SOL {7,30} days ago, I'd have … by now." Honest math:
+// the deposit fee is charged on the way in (×0.931), the burn fee on the
+// way out (×0.931), the entry rate is the ACTUAL indexed rate from N days
+// ago when history covers it (falls back to de-compounding the realized
+// daily rate when it doesn't), and the exit rate is the live accruing rate
+// — so the payout number ticks up every second, because "by now" keeps
+// moving. Negative outcomes render ember, not hidden.
+// -----------------------------------------------------------------------------
+interface EntryPoint {
+  rate: number
+  label: string
+  /** Provenance phrase rendered in the sub copy — every panel states where
+   *  its entry rate came from. */
+  note: string
+}
+
+// Pool genesis: 2026-05-08 07:11:01 UTC, minted at exactly 1:1 NAV. The
+// indexed history only reaches back to when the stats indexer was deployed
+// (weeks AFTER launch), so "at launch" anchors to the known genesis instead
+// of the oldest snapshot — the oldest snapshot is not launch.
+const LAUNCH_TS_MS = Date.UTC(2026, 4, 8, 7, 11, 1)
+const LAUNCH_RATE = 1.0
+
+function entryPointDaysAgo(perf: PerfState, days: number): EntryPoint | null {
+  const rows = perf.history
+  if (rows.length > 0) {
+    const target = Date.now() - days * 86_400_000
+    let best: { ts: number; rate: number } | null = null
+    for (const r of rows) {
+      if (!(r.rate > 0)) continue
+      if (!best || Math.abs(r.ts - target) < Math.abs(best.ts - target)) best = r
+    }
+    // Accept the snapshot only if it's reasonably close to the target —
+    // otherwise a 3-day-old dataset would silently impersonate "30d ago".
+    if (best && Math.abs(best.ts - target) <= days * 86_400_000 * 0.35) {
+      return {
+        rate: best.rate,
+        label: `${days} days ago`,
+        note: 'entry at the actual indexed rate',
+      }
+    }
+  }
+  // Fallback: de-compound the measured realized rate.
+  if (perf.rate != null && perf.dailyRate != null) {
+    return {
+      rate: perf.rate / Math.pow(1 + perf.dailyRate, days),
+      label: `${days} days ago`,
+      note: 'entry projected at the realized rate',
+    }
+  }
+  return null
+}
+
+function entryPointAtLaunch(): EntryPoint {
+  const daysAgo = Math.max(
+    1,
+    Math.round((Date.now() - LAUNCH_TS_MS) / 86_400_000),
+  )
+  return {
+    rate: LAUNCH_RATE,
+    label: `at launch · ${daysAgo}d ago`,
+    note: 'entry at launch NAV 1:1 (2026-05-08)',
+  }
+}
+
+function MagickPanels({ perf }: { perf: PerfState }) {
+  const now = useNowMs()
+  // Default amount = the live "$100/day on X SOL" figure from the card
+  // above, so the two surfaces tell one story. null = user hasn't typed;
+  // once they edit, their value wins and stops tracking the live figure.
+  const [amtStr, setAmtStr] = useState<string | null>(null)
+  const effStr =
+    amtStr ?? (perf.solFor100 != null ? perf.solFor100.toFixed(2) : '54.44')
+  const amt = Number.parseFloat(effStr)
+  const amtOk = Number.isFinite(amt) && amt > 0
+
+  const rateNow =
+    perf.rate != null
+      ? accrue(perf.rate, perf.rateTs || now, perf.dailyRate, now)
+      : null
+
+  return (
+    <div className="magick">
+      <div className="magick-head">
+        <span className="eyebrow">
+          the magick · if I'd put{' '}
+          <input
+            className="magick-amt mono tabular"
+            inputMode="decimal"
+            value={effStr}
+            onChange={e => setAmtStr(e.target.value.replace(/[^0-9.]/g, ''))}
+            aria-label="SOL amount for the counterfactual panels"
+          />{' '}
+          SOL in…
+        </span>
+      </div>
+      <div className="magick-grid">
+        {[entryPointDaysAgo(perf, 30), entryPointAtLaunch()].map((entry, i) => {
+          const ready = amtOk && entry != null && rateNow != null
+          let value = 0
+          let delta = 0
+          if (ready) {
+            const stac = (amt * (1 - FEE)) / (entry as EntryPoint).rate
+            value = stac * (rateNow as number) * (1 - FEE)
+            delta = value - amt
+          }
+          const up = delta >= 0
+          return (
+            <div className="magick-panel" key={i}>
+              <div className="magick-k">
+                <span className="live-dot" />
+                {entry?.label ?? (i === 0 ? '30 days ago' : 'at launch')}
+              </div>
+              <div className="magick-v serif tabular tick-live">
+                {ready ? value.toFixed(9) : '—'}
+                <span className="small">SOL by now</span>
+              </div>
+              <div className="magick-sub">
+                {ready ? (
+                  <>
+                    <span className={`magick-delta ${up ? 'up' : 'down'}`}>
+                      {up ? '▲ +' : '▼ −'}
+                      {Math.abs(delta).toFixed(4)} SOL
+                      {' · '}
+                      {up ? '+' : '−'}
+                      {Math.abs((delta / amt) * 100).toFixed(2)}%
+                    </span>{' '}
+                    net of both 6.9% fees, {(entry as EntryPoint).note} —
+                    ticking at the realized rate between burns, not a chain
+                    read.
+                  </>
+                ) : (
+                  'waiting on rate history…'
+                )}
+              </div>
+            </div>
+          )
+        })}
+      </div>
+      <p className="magick-legal">
+        Historical performance is no indication, implication, nor assurance
+        of future returns. The realized rate can slow, stall, or change with
+        market conditions; only the redemption ratio's non-decrease is
+        program-enforced.
+      </p>
+    </div>
   )
 }
 
@@ -270,19 +544,14 @@ function NavValue({ rate }: { rate: number | null }) {
 // Sections
 // -----------------------------------------------------------------------------
 function HeroBlock({ perf }: { perf: PerfState }) {
-  // Compound APR — `(1 + dailyRate)^365 − 1`. At low daily rates this is
-  // ≈ dailyRate × 365; at the protocol's actual rate it explodes correctly
-  // instead of misrepresenting as a linear annual. Clamp implausible values
-  // to null so the cell renders "—" rather than e.g. "1.2M%".
-  const aprPct =
-    perf.dailyRate != null
-      ? Math.min(
-          MAX_DISPLAYED_APR_PCT,
-          (Math.pow(1 + perf.dailyRate, 365) - 1) * 100,
-        )
-      : null
-  const aprDisplayable =
-    aprPct != null && aprPct >= 0 && aprPct < MAX_DISPLAYED_APR_PCT
+  // Simple annualized APR — `dailyRate × 365`. The previous version
+  // compounded to APY ((1+r)^365 − 1 ≈ 320,000% at the current rate) and
+  // then clamped anything ≥1000% to "—" as unbelievable, which meant the
+  // cell rendered a permanent em-dash. Simple annualization is what "APR"
+  // means, stays in the plausible range (5%/day cap → ≤1825%), and the
+  // doubling-time card already tells the compounding story.
+  const aprPct = perf.dailyRate != null ? perf.dailyRate * 365 * 100 : null
+  const aprDisplayable = aprPct != null && aprPct >= 0
   return (
     <section className="hero shell">
       <div className="hero-eyebrow">
@@ -339,11 +608,17 @@ function HeroBlock({ perf }: { perf: PerfState }) {
           </div>
           <div className="score-sub">
             That's the SOL it currently takes, stacc'd, to print{' '}
-            <b>$100/day</b>. At <b>${perf.solUsd.toFixed(0)}/SOL</b> spot.
-            Recomputed every block.
+            <b>$100/day</b>. At <b>${perf.solUsd.toFixed(0)}/SOL</b>
+            {perf.livePrice ? (
+              <> spot. Recomputed every block.</>
+            ) : (
+              <> est. — live price feed unreachable, using a fallback.</>
+            )}
           </div>
         </div>
       </div>
+
+      <MagickPanels perf={perf} />
 
       <h1 className="hero-h1">
         Yield as <em>deflation,</em>
@@ -361,10 +636,10 @@ function HeroBlock({ perf }: { perf: PerfState }) {
         <div className="meta-cell">
           <div className="meta-k">redemption rate</div>
           <div className="meta-v">
-            <NavValue rate={perf.rate} />
+            <NavValue perf={perf} />
             <sup>↑</sup>
           </div>
-          <div className="meta-sub">SOL per stacSOL · climbing</div>
+          <div className="meta-sub">SOL per stacSOL · streams on-chain</div>
         </div>
         <div className="meta-cell">
           <div className="meta-k">transfer fee</div>
@@ -419,7 +694,7 @@ function HeroBlock({ perf }: { perf: PerfState }) {
               %
             </span>
           </div>
-          <div className="meta-sub">from 24h rate change</div>
+          <div className="meta-sub">simple · realized daily × 365</div>
         </div>
       </div>
 

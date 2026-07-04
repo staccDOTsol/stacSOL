@@ -21,6 +21,9 @@ interface CacheEntry {
   inflight: Promise<bigint> | null
   subscribers: Set<(b: bigint) => void>
   intervalId: ReturnType<typeof setInterval> | null
+  /** websocket accountSubscribe id — realtime balance pushes; the poll
+   *  interval stays as the fallback for dropped sockets. */
+  wsSubId: number | null
 }
 
 const cache = new Map<string, CacheEntry>()
@@ -55,6 +58,7 @@ export function useStacBalance(
         inflight: null,
         subscribers: new Set(),
         intervalId: null,
+        wsSubId: null,
       }
       cache.set(key, entry)
     }
@@ -88,15 +92,38 @@ export function useStacBalance(
       setBalance(entry.balance)
     } else {
       void tick()
-      if (!entry.intervalId) entry.intervalId = setInterval(tick, pollMs)
+    }
+    if (!entry.intervalId) entry.intervalId = setInterval(tick, pollMs)
+
+    // Realtime: push every ATA change (mint lands, burn settles, transfer
+    // arrives) straight into the cache. amount u64 @ byte 64 — same offset
+    // logic as the poll path above.
+    if (entry.wsSubId == null) {
+      entry.wsSubId = connection.onAccountChange(
+        ata,
+        (acc) => {
+          if (!entry) return
+          const v = acc.data.length >= 72 ? acc.data.readBigUInt64LE(64) : 0n
+          entry.balance = v
+          entry.ts = Date.now()
+          entry.subscribers.forEach(s => s(v))
+        },
+        'processed',
+      )
     }
 
     return () => {
       if (!entry) return
       entry.subscribers.delete(onUpdate)
-      if (entry.subscribers.size === 0 && entry.intervalId) {
-        clearInterval(entry.intervalId)
-        entry.intervalId = null
+      if (entry.subscribers.size === 0) {
+        if (entry.intervalId) {
+          clearInterval(entry.intervalId)
+          entry.intervalId = null
+        }
+        if (entry.wsSubId != null) {
+          connection.removeAccountChangeListener(entry.wsSubId).catch(() => {})
+          entry.wsSubId = null
+        }
       }
     }
   }, [connection, publicKey, pollMs])
