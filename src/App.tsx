@@ -1262,10 +1262,7 @@ function PositionCard({
 function QuickActions() {
   const items = [
     { k: 'Portfolio', s: 'DLMM positions · claim & withdraw', h: '/portfolio' },
-    { k: 'Liquidity', s: 'Raydium CPMM zap-in / zap-out', h: '/liquidity' },
-    { k: 'Single-sided', s: 'Meteora DLMM concentrated LP', h: '/singlesided' },
     { k: 'Leaderboard', s: 'Holders, P&L, referrals', h: '/leaderboard' },
-    { k: 'Liqmonsta', s: 'Auto-rebalance LP smasher', h: '/liqmonsta' },
     { k: 'FAQ', s: 'Bankrun math · safety · fee mechanics', h: '/faq' },
     { k: 'Terms', s: 'Long-form ToS · LST factory carve-out', h: '/terms' },
     { k: 'Wrap', s: 'stacSOL ↔ wstacSOL · for ride.markets', h: '/wrap' },

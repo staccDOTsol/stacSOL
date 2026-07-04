@@ -41,9 +41,6 @@ const NAV_LINKS = [
 // away on mobile — surfaced via the hamburger drawer.
 const MORE_LINKS = [
   { id: '/wrap', label: 'Wrap', sub: 'stacSOL ↔ wstacSOL · one-click for ride.markets' },
-  { id: '/liquidity', label: 'Liquidity', sub: 'Raydium CPMM zap-in / zap-out' },
-  { id: '/singlesided', label: 'Single-sided', sub: 'Meteora DLMM concentrated LP' },
-  { id: '/liqmonsta', label: 'Liqmonsta', sub: 'Auto-rebalance LP smasher' },
   { id: '/guide', label: 'Guide', sub: 'SOL of the thystaccfloweth' },
   { id: '/baitscope', label: 'Baitscope', sub: 'Flywheel feed · trades & burns' },
 ]
