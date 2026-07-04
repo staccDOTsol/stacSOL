@@ -23,7 +23,6 @@ import {
   type TransactionInstruction,
 } from '@solana/web3.js'
 import EditorialNav from './components/EditorialNav'
-import { ReferralCard } from './components/ReferralCard'
 import { usePool } from './hooks/usePool'
 import { useSolBalance } from './hooks/useSolBalance'
 import { useStacBalance } from './hooks/useStacBalance'
@@ -40,7 +39,7 @@ import {
   ixUnwrap,
   ixCreateWrappedAtaIdempotent,
 } from './lib/wrapper-ix'
-import { deriveReferrerAtaAndCreateIx, useReferrer } from './lib/referrer'
+import { deriveReferrerAtaAndCreateIx, MARKETING_REFERRER } from './lib/referrer'
 import { DECIMALS, MINT, TOKEN_2022 } from './lib/constants'
 import { fireBurn, fireMint, summarizeError } from './lib/confetti'
 
@@ -82,7 +81,6 @@ function StakeAndWrapCard({
   const wallet = useWallet()
   const modal = useWalletModal()
   const { pool } = usePool()
-  const ref = useReferrer()
   const [amt, setAmt] = useState('')
   const [activePct, setActivePct] = useState<number | null>(null)
   const [status, setStatus] = useState<Status | null>(null)
@@ -135,20 +133,15 @@ function StakeAndWrapCard({
       if (!acc) ixs.push(ixCreateAtaIdempotent(pubkey, pubkey, MINT))
       ixs.push(ixCreateWrappedAtaIdempotent(pubkey, pubkey))
       // Referrer ATA gets 50% of the 6.9% deposit fee (the other 50% goes
-      // to the pool manager's fee account). Without this slot the
-      // referrer share silently routes back to the depositor's own ATA
-      // via the `referral ?? userAta` fallback in ix.ts.
-      const referringSelf = ref.referrer.equals(pubkey)
+      // to the pool manager's fee account) — always the marketing wallet.
       const { referrerAta, createIx: refCreateIx } = deriveReferrerAtaAndCreateIx({
         payer: pubkey,
-        referrer: ref.referrer,
+        referrer: MARKETING_REFERRER,
       })
-      if (!referringSelf) ixs.push(refCreateIx)
+      ixs.push(refCreateIx)
       // Stake: SOL → stacSOL (lands net of 6.9% deposit fee on the user's
       // stacSOL ATA).
-      ixs.push(
-        ixDepositSol(pubkey, lamports, pool, referringSelf ? undefined : referrerAta),
-      )
+      ixs.push(ixDepositSol(pubkey, lamports, pool, referrerAta))
       // Wrap: the entire stacSOL we just received gets pushed into the
       // wrapper. The wrap ix is delta-accounted so we can pass the GROSS
       // expected net-of-deposit amount and the program will mint exactly
@@ -829,10 +822,6 @@ export default function WrapPage() {
             staleByEpochs={staleByEpochs}
             onDone={onDone}
           />
-        </div>
-
-        <div style={{ marginTop: 32, maxWidth: 640 }}>
-          <ReferralCard />
         </div>
 
         <section

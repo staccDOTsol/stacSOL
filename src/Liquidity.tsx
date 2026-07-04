@@ -24,7 +24,7 @@ import {
   solscanTx,
 } from './lib/zap'
 import { fetchPool } from './lib/pool'
-import { useReferrer } from './lib/referrer'
+import { MARKETING_REFERRER } from './lib/referrer'
 
 interface RayPool {
   type: string
@@ -397,10 +397,6 @@ async function getTokenBalanceAtomic(
 function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
   const { connection } = useConnection()
   const wallet = useWallet()
-  // Pull the active referrer (marketing default OR `?ref=` override) so the
-  // stake-pool DepositSol calls inside the zap route the 50% deposit-fee
-  // share into the right ATA.
-  const ref = useReferrer()
   // User picks WHICH token to specify. Amount entered is in that token's
   // UI units. Matching other side computed at current pool ratio. We only
   // swap from SOL if either side comes up short.
@@ -635,7 +631,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
             stakePool.poolTokenSupplyAccounting,
             3000,
           )
-          const txRaw = await buildStacsolMintTx(connection, owner, lamportsForA, ref.referrer)
+          const txRaw = await buildStacsolMintTx(connection, owner, lamportsForA, MARKETING_REFERRER)
           const tx = await appendIxToV0Tx(connection, txRaw, heliusTipIx(owner))
           txs.push(tx)
           updateStep(stepLabels.length - 1, {
@@ -693,7 +689,7 @@ function AddPanel({ pool, onClose }: { pool: RayPool; onClose: () => void }) {
             stakePool.poolTokenSupplyAccounting,
             3000,
           )
-          const txRaw = await buildStacsolMintTx(connection, owner, lamportsForB, ref.referrer)
+          const txRaw = await buildStacsolMintTx(connection, owner, lamportsForB, MARKETING_REFERRER)
           const tx = await appendIxToV0Tx(connection, txRaw, heliusTipIx(owner))
           txs.push(tx)
           updateStep(stepLabels.length - 1, {

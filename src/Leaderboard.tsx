@@ -113,7 +113,10 @@ function isMixedEarner(row: HolderRow): boolean {
 
 // Threshold for "meaningful" transfer activity — ignore dust deltas that
 // come from rounding / off-by-one between the indexer's expected supply
-// and the live on-chain balance. 0.001 stacSOL = 1e6 atoms.
+// and the live on-chain balance. 0.001 stacSOL = 1e6 atoms. The sent/recv
+// markers matter for reading the table: P&L values transferred-out stac as
+// an implicit burn, so a wallet that moved its bag into an LP can show
+// positive P&L on a small remaining balance.
 const TRANSFER_DUST = 1_000_000n
 
 function hasTransferredOut(row: HolderRow): boolean {
@@ -164,18 +167,6 @@ function roiPctOnGross(row: HolderRow): number | null {
   return row.pnlSol / grossIn
 }
 
-// breakevenNav from the API can be wildly above current NAV (or negative)
-// for wallets that have churned heavily. When it's >50× current NAV it
-// represents "would need NAV to moon 50× for your paid cost basis to
-// recoup" — algebraically right, practically irrelevant. Hide in those
-// cases instead of showing a misleading number.
-function breakevenDisplay(row: HolderRow, currentRate: number | null): string {
-  if (row.breakevenNav == null) return '—'
-  if (row.breakevenNav < 0) return '—'
-  if (currentRate != null && row.breakevenNav > currentRate * 20) return 'far'
-  return row.breakevenNav.toFixed(6)
-}
-
 interface ColumnSpec {
   key: OrderBy
   label: string
@@ -189,38 +180,23 @@ const COLUMNS: ColumnSpec[] = [
     key: 'total_stac',
     label: 'stacSOL held',
     align: 'right',
-    hint: 'Current on-chain stacSOL balance (wallet ATA + HawkFi userPda ATA, summed).',
+    hint: 'Current on-chain stacSOL balance. The dim line under it is what that bag pays out if burned right now (held × NAV × 0.931).',
   },
   {
     key: 'gross_sol_in',
     label: 'cost basis',
     align: 'right',
-    hint: 'Net SOL paid into the position you currently hold: gross_sol_in − gross_sol_out. Equals stacSOL_held × break-even NAV. (Sorted by lifetime gross_sol_in for stability across mint→burn→mint cycles.)',
+    hint: 'Net SOL paid in: lifetime deposits minus SOL already taken back out via burns.',
   },
   {
     key: 'pnl_sol',
-    label: 'P&L SOL',
+    label: 'P&L',
     align: 'right',
-    hint:
-      'P&L in SOL: (held × 0.931 × NAV) + lifetime burn payouts − lifetime SOL paid in. This is what a wallet would actually realize if it burned right now — referral / manager-fee kickbacks are already in `held` (they were paid as stacSOL into the ATA), so they show up here without needing to be added separately.',
-  },
-  {
-    key: 'pnl_pct',
-    label: 'P&L %',
-    align: 'right',
-    hint:
-      'Lifetime ROI on paid SOL only (pnl_sol ÷ total SOL ever deposited). Does NOT include referral credits — those show as +earned in the SOL column.',
-  },
-  {
-    key: 'first_event_at',
-    label: 'first',
-    align: 'right',
-    hideOnMobile: true,
-    hint: 'Time since this wallet first interacted with the protocol.',
+    hint: 'Up or down, in SOL: burn value of held stacSOL + SOL ever withdrawn − SOL ever deposited. The % is that P&L over total SOL ever deposited.',
   },
   {
     key: 'last_event_at',
-    label: 'last',
+    label: 'last active',
     align: 'right',
     hideOnMobile: true,
     hint: 'Time since this wallet last minted, burned, or earned a credit.',
@@ -284,9 +260,7 @@ export default function HoldersLeaderboard() {
   const [dir, setDir] = useState<'asc' | 'desc'>('desc')
   const [searchInput, setSearchInput] = useState('')
   const [search, setSearch] = useState('')
-  const [hideUnderwater, setHideUnderwater] = useState(false)
   const [hideMarketing, setHideMarketing] = useState(false)
-  const [minStac, setMinStac] = useState(0)
 
   // Bumped after a successful doxx / undoxx so the table immediately
   // re-fetches and the row swaps render state without waiting for the
@@ -307,14 +281,12 @@ export default function HoldersLeaderboard() {
       params.set('dir', dir)
       params.set('limit', '50')
       if (search) params.set('search', search)
-      if (hideUnderwater) params.set('hideUnderwater', 'true')
       if (hideMarketing) params.set('hideMarketing', 'true')
-      if (minStac > 0) params.set('minStac', String(minStac))
       if (cursor) params.set('cursor', cursor)
       if (myPk) params.set('my', myPk)
       return `/api/holders-leaderboard?${params.toString()}`
     },
-    [orderBy, dir, search, hideUnderwater, hideMarketing, minStac, myPk],
+    [orderBy, dir, search, hideMarketing, myPk],
   )
 
   // Reset on filter / sort change.
@@ -433,25 +405,10 @@ export default function HoldersLeaderboard() {
   const stickyTotal = useMemo(() => {
     if (!meta) return null
     const totalStacUi = Number(BigInt(meta.totals.totalStacAtom)) / 1e9
-    const sumIn = Number(BigInt(meta.totals.sumGrossIn)) / LAMPORTS_PER_SOL
-    const sumEarnedStac =
-      Number(BigInt(meta.totals.sumEarnedAtom || '0')) / 1e9
     // Real economic state: what the protocol would pay out if every holder
     // burned right now. burn_net_per_token = balance × (1 - 0.069) × NAV.
-    const rate = meta.rate ?? 0
-    const burnValueIfAllRedeem = totalStacUi * 0.931 * rate
-    // Derive sumGrossOut from the identity:
-    //   sumPnlSol = sumBurnNetSol + sumGrossOut − sumGrossIn
-    // where sumBurnNetSol = totalStacUi × 0.931 × rate (= burnValueIfAllRedeem).
-    // This avoids needing a new API field.
-    const sumOut = meta.totals.sumPnlSol + sumIn - burnValueIfAllRedeem
-    return {
-      totalStacUi,
-      sumIn,
-      sumOut: Math.max(0, sumOut),
-      sumEarnedStac,
-      burnValueIfAllRedeem,
-    }
+    const burnValueIfAllRedeem = totalStacUi * 0.931 * (meta.rate ?? 0)
+    return { totalStacUi, burnValueIfAllRedeem }
   }, [meta])
 
   return (
@@ -470,12 +427,9 @@ export default function HoldersLeaderboard() {
         <span className="inline-block w-6 h-[2px] bg-[var(--color-hot)]" />
       </div>
 
-      {/* Totals strip — protocol economic state.
-          Avoids the "earned (free)" alarm number which was misleading:
-          referral stacSOL is a *slice* of the held supply, not extra value
-          floating on top. Show the real metric: what the protocol would
-          pay out if every holder redeemed right now, and the SOL in vs
-          SOL out flow. */}
+      {/* Totals strip — the five numbers that matter: how many wallets,
+          how much stac, what it's all worth on burn, the NAV, and how many
+          are up vs down. Everything else lives in column tooltips. */}
       {meta && stickyTotal && (
         <div className="mb-4 flex flex-wrap gap-x-4 gap-y-1 text-[10px] uppercase tracking-[2px] text-[var(--color-dim)]">
           <span>
@@ -492,76 +446,17 @@ export default function HoldersLeaderboard() {
             </span>{' '}
             stac held
           </span>
-          <span title="Cumulative SOL ever deposited via mint, across all wallets.">
-            <span className="text-[var(--color-fg)] font-mono normal-case tracking-normal">
-              {stickyTotal.sumIn.toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })}
-            </span>{' '}
-            SOL in
-            <span className="ml-0.5 cursor-help opacity-60">ⓘ</span>
-          </span>
-          <span title="Cumulative SOL ever withdrawn via burn, across all wallets. Derived from sumPnlSol identity (burnValue + sumOut − sumIn = sumPnl).">
-            <span className="text-[var(--color-fg)] font-mono normal-case tracking-normal">
-              {stickyTotal.sumOut.toLocaleString(undefined, {
-                maximumFractionDigits: 2,
-              })}
-            </span>{' '}
-            SOL out
-            <span className="ml-0.5 cursor-help opacity-60">ⓘ</span>
-          </span>
           {meta.rate != null && (
-            <span title="What the protocol would pay out IF every holder burned every stacSOL right now, at current NAV, after the 6.9% Token-2022 transfer fee. Compare to on-chain backing (Pool card on the home page) to see solvency.">
+            <span title="What the protocol would pay out if every holder burned every stacSOL right now, at current NAV, after the 6.9% fee.">
               <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
                 {stickyTotal.burnValueIfAllRedeem.toLocaleString(undefined, {
                   maximumFractionDigits: 2,
                 })}
               </span>{' '}
-              burn value
+              SOL burn value
               <span className="ml-0.5 cursor-help opacity-60">ⓘ</span>
             </span>
           )}
-          {/* Up/down chip pair — show both bases so the referral-attribution
-              lift is visible. "paid only" = pnl on actual mints/burns; "adj"
-              = paid + value of referral kickbacks. */}
-          {(() => {
-            const paidUp = meta.totals.paidProfitableCount
-            const paidDown = meta.totals.paidUnderwaterCount
-            const adjUp = meta.totals.profitableCount
-            const adjDown = meta.totals.underwaterCount
-            return (
-              <>
-                {paidUp != null && paidDown != null && (
-                  <span
-                    title="Paid trading only: wallets whose own SOL in / SOL out (no referral credits) is positive vs negative. This is your trading-skill split."
-                  >
-                    <span className="text-[var(--color-dim)] mr-1">paid:</span>
-                    <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
-                      {paidUp}
-                    </span>
-                    <span className="text-[var(--color-dim)] mx-0.5">/</span>
-                    <span className="text-[var(--color-warn)] font-mono normal-case tracking-normal">
-                      {paidDown}
-                    </span>
-                    <span className="ml-1 cursor-help opacity-60">ⓘ</span>
-                  </span>
-                )}
-                <span
-                  title="Adjusted: paid P&L plus the current-NAV value of any stacSOL credited via referrals. Wallets lifted into profit by referral kickbacks alone show up positive here even if their paid trading lost money."
-                >
-                  <span className="text-[var(--color-dim)] mr-1">adj:</span>
-                  <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
-                    {adjUp}
-                  </span>
-                  <span className="text-[var(--color-dim)] mx-0.5">/</span>
-                  <span className="text-[var(--color-warn)] font-mono normal-case tracking-normal">
-                    {adjDown}
-                  </span>
-                  <span className="ml-1 cursor-help opacity-60">ⓘ</span>
-                </span>
-              </>
-            )
-          })()}
           {meta.rate != null && (
             <span>
               NAV{' '}
@@ -570,26 +465,18 @@ export default function HoldersLeaderboard() {
               </span>
             </span>
           )}
-          {meta.totals.sumEarnedSol > 0 && (
-            <span
-              className="opacity-60"
-              title="Referral attribution: SOL value (at current NAV) of stacSOL ever credited via the 50/50 referral + manager-fee split of the 6.9% deposit fee. This is a SUBSET of the held supply, not additional value. Counting it would double-count what's already in 'burn value' above."
-            >
-              <span className="font-mono normal-case tracking-normal">
-                {fmtSolFloat(meta.totals.sumEarnedSol)}
-              </span>{' '}
-              ref attr
-              <span className="ml-0.5 cursor-help opacity-80">ⓘ</span>
+          <span title="Wallets currently in profit vs underwater (P&L as shown in the table).">
+            <span className="text-[var(--color-green)] font-mono normal-case tracking-normal">
+              {meta.totals.profitableCount}
             </span>
-          )}
+            <span className="text-[var(--color-dim)] mx-0.5">up /</span>
+            <span className="text-[var(--color-warn)] font-mono normal-case tracking-normal">
+              {meta.totals.underwaterCount}
+            </span>
+            <span className="text-[var(--color-dim)] ml-0.5">down</span>
+          </span>
         </div>
       )}
-
-      {/* Gamified referral leaderboard — real third-party referrers (house
-          wallets excluded by default) + the connected wallet's share link. */}
-      <div className="mb-6">
-        <ReferralLeaderboard />
-      </div>
 
       {/* Filter bar */}
       <div className="mb-4 flex flex-wrap items-center gap-3">
@@ -603,59 +490,23 @@ export default function HoldersLeaderboard() {
         <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-[2px] text-[var(--color-dim)] cursor-pointer">
           <input
             type="checkbox"
-            checked={hideUnderwater}
-            onChange={(e) => setHideUnderwater(e.target.checked)}
-            className="accent-[var(--color-hot)]"
-          />
-          hide underwater
-        </label>
-        <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-[2px] text-[var(--color-dim)] cursor-pointer">
-          <input
-            type="checkbox"
             checked={hideMarketing}
             onChange={(e) => setHideMarketing(e.target.checked)}
             className="accent-[var(--color-hot)]"
           />
-          hide marketing
-        </label>
-        <label className="flex items-center gap-1.5 text-[10px] uppercase tracking-[2px] text-[var(--color-dim)]">
-          min stac
-          <input
-            type="number"
-            min={0}
-            step={0.1}
-            value={minStac || ''}
-            onChange={(e) => {
-              const v = parseFloat(e.target.value)
-              setMinStac(Number.isFinite(v) && v > 0 ? v : 0)
-            }}
-            placeholder="0"
-            className="w-20 px-2 py-1 rounded border border-[rgb(255_34_0_/_0.4)] bg-[var(--color-bg)] text-[12px] text-[var(--color-fg)] placeholder:text-[var(--color-dim)] focus:outline-none focus:border-[var(--color-hot)]"
-          />
+          hide marketing wallet
         </label>
       </div>
 
-      {/* "You" sticky row.
-          Three display modes:
-          - pure earner: no SOL paid → show only the "free" earned column
-          - mixed earner: paid AND earned → SPLIT into paid / earned / combined
-            beats. The naive single-line render put pnl_pct (paid-base) next
-            to adjustedPnl (combined) which read as a contradiction; this
-            splits them so each number is on its own base.
-          - plain holder: just pnl + pnl_pct
-      */}
+      {/* "You" sticky row — rank, bag, one P&L number. Pure earners (zero
+          SOL paid) get "+X SOL free" instead of a meaningless percentage. */}
       {myPk && myRow && (() => {
         const myPure = isPureEarner(myRow)
-        const myMixed = isMixedEarner(myRow)
-        const myAdj = adjustedPnl(myRow)
-        const paidPnl = myRow.pnlSol
-        const earnedSol = myRow.earnedSol || 0
-        const adjColor = myPure || myAdj >= 0
+        const myPnl = adjustedPnl(myRow)
+        const color = myPure || myPnl >= 0
           ? 'text-[var(--color-green)]'
           : 'text-[var(--color-warn)]'
-        const paidColor = paidPnl >= 0
-          ? 'text-[var(--color-green)]'
-          : 'text-[var(--color-warn)]'
+        const roi = roiPctOnGross(myRow)
         return (
           <div className="mb-3 px-3 py-2 rounded border border-[rgb(255_119_51_/_0.5)] bg-[rgb(255_119_51_/_0.08)] sticky top-2 z-10 backdrop-blur">
             <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-1 text-[11px]">
@@ -675,81 +526,19 @@ export default function HoldersLeaderboard() {
                   copy={(t) => navigator.clipboard.writeText(t)}
                   copiedKey={null}
                 />
-                {(myPure || myMixed) && (
-                  <span className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-green)] text-[var(--color-green)] bg-[rgb(0_180_0_/_0.08)]">
-                    earned
-                  </span>
-                )}
               </div>
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-[var(--color-dim)] font-mono">
                 <span>{fmtAmount(BigInt(myRow.totalStacAtom))} stac</span>
-
                 {myPure ? (
-                  /* received stacSOL with zero SOL paid → only the
-                     earned column makes sense, no percentage. */
-                  <>
-                    <span className={adjColor}>
-                      +{fmtSolFloat(earnedSol)} SOL
-                    </span>
-                    <span className="text-[10px] uppercase tracking-[2px] text-[var(--color-ember)]">
-                      free
-                    </span>
-                  </>
-                ) : myMixed ? (
-                  /* paid AND earned. Show the headline P&L (which already
-                     includes referral-credit value via the held balance)
-                     plus an "of which X came free" attribution note. The
-                     previous design added paid + earned and showed the
-                     sum as the headline — that double-counted the referral
-                     kickbacks against the same stacSOL once-as-held-balance
-                     and once-as-earned-credit. Now we show only the real
-                     realizable number. */
-                  <>
-                    <span className={`${adjColor} font-black`}>
-                      {myAdj >= 0 ? '+' : '−'}
-                      {fmtSolFloat(Math.abs(myAdj))} SOL
-                    </span>
-                    {(() => {
-                      const roi = roiPctOnGross(myRow)
-                      return roi == null ? null : (
-                        <span
-                          className={`${adjColor} opacity-70`}
-                          title="lifetime ROI on total SOL deposited"
-                        >
-                          ({(roi * 100).toFixed(2)}%)
-                        </span>
-                      )
-                    })()}
-                    <span className="text-[var(--color-dim)]">·</span>
-                    <span
-                      className="text-[10px] uppercase tracking-[2px] text-[var(--color-ember)]"
-                      title="of your P&L above, this much came from stacSOL credited via referrals / manager-fee (no SOL paid for it). Already included in the headline, not additive."
-                    >
-                      of which free
-                    </span>
-                    <span className="text-[var(--color-ember)]">
-                      +{fmtSolFloat(earnedSol)} SOL
-                    </span>
-                  </>
+                  <span className={color}>
+                    +{fmtSolFloat(myRow.earnedSol || 0)} SOL free
+                  </span>
                 ) : (
-                  /* plain holder — no referrals/manager-fee credits. */
-                  <>
-                    <span className={paidColor}>
-                      {paidPnl >= 0 ? '+' : '−'}
-                      {fmtSolFloat(Math.abs(paidPnl))} SOL
-                    </span>
-                    {(() => {
-                      const roi = roiPctOnGross(myRow)
-                      return roi == null ? null : (
-                        <span
-                          className={paidColor}
-                          title="lifetime ROI on total SOL deposited"
-                        >
-                          ({(roi * 100).toFixed(2)}%)
-                        </span>
-                      )
-                    })()}
-                  </>
+                  <span className={`${color} font-black`}>
+                    {myPnl >= 0 ? '+' : '−'}
+                    {fmtSolFloat(Math.abs(myPnl))} SOL
+                    {roi != null && ` (${(roi * 100).toFixed(2)}%)`}
+                  </span>
                 )}
               </div>
             </div>
@@ -825,16 +614,6 @@ export default function HoldersLeaderboard() {
                       </button>
                     </th>
                   ))}
-                  <th
-                    className="text-right px-2 py-2 font-black"
-                    title="Break-even NAV: the redemption rate at which the wallet's paid SOL in would exactly equal SOL out + held value. NAV has to climb to this number before the wallet is profitable on paid trading alone. 'far' = >20× current NAV (effectively unreachable). '—' = pure earner (no paid SOL)."
-                  >
-                    break-even
-                    <span className="ml-1 opacity-50 cursor-help">ⓘ</span>
-                  </th>
-                  <th className="text-right pl-2 pr-3 py-2 font-black hidden lg:table-cell">
-                    flows
-                  </th>
                 </tr>
               </thead>
               <tbody>
@@ -889,33 +668,27 @@ export default function HoldersLeaderboard() {
         </>
       )}
 
+      {/* Historical referral leaderboard — archived record of third-party
+          referrers from when the UI supported ?ref= links. Read-only: all
+          deposits now credit the marketing wallet. */}
+      <div className="mt-10 mb-6">
+        <ReferralLeaderboard />
+      </div>
+
       <p className="mt-6 text-[10px] text-[var(--color-dim)] leading-relaxed">
-        Indexed from on-chain DepositSol / WithdrawSol ixs (program{' '}
-        <span className="font-mono">SP12…vhY</span>). Balances cover both
-        the wallet's stacSOL ATA and its HawkFi userPda ATA. P&amp;L is{' '}
-        <code className="text-[var(--color-fg)]">
-          held × NAV × 0.931 + grossOut − grossIn
-        </code>{' '}
-        — realized burns plus the current burn value of held stacSOL, minus
-        SOL ever deposited. The percentage is ROI on{' '}
-        <code className="text-[var(--color-fg)]">grossIn</code>{' '}
-        (lifetime deposited capital), not on the residual still-committed
-        slice — that's the figure that matches user intuition for
-        churn-heavy wallets. The{' '}
+        Indexed from on-chain DepositSol / WithdrawSol ixs, updated every
+        ~5min. P&amp;L = what the wallet would have if it burned everything
+        right now (held × NAV × 0.931) plus SOL it already took out, minus
+        SOL it ever put in; the % is that number over everything it ever put
+        in. Wallets tagged{' '}
         <span className="text-[var(--color-green)] uppercase tracking-[2px] text-[9px]">
           earned
         </span>{' '}
-        column is the deposit-fee leg credited to referrers / manager (50/50
-        split, 3.45% of mint output each). Wallets whose stacSOL came
-        purely from earnings show a{' '}
-        <span className="text-[var(--color-green)] uppercase tracking-[2px] text-[9px]">
-          earned
+        got some or all of their stacSOL free via the deposit-fee split. The{' '}
+        <span className="text-[var(--color-warn)] uppercase tracking-[2px] text-[9px]">
+          marketing
         </span>{' '}
-        badge with cost basis hidden. Break-even NAV is the rate at which
-        the burn payout equals net SOL paid in. Updates every ~5min via
-        Vercel cron.
-        <br />
-        Marketing wallet (
+        wallet (
         <a
           href={`https://solscan.io/account/${MARKETING_WALLET}`}
           target="_blank"
@@ -924,66 +697,49 @@ export default function HoldersLeaderboard() {
         >
           {shortPk(MARKETING_WALLET)}
         </a>
-        ) is the default referrer credit destination — toggle off to see
-        organic depositors only.
+        ) collects the referral share of every deposit fee — filter it out
+        above to see organic depositors only.
       </p>
     </div>
     </>
   )
 }
 
-function PnLCells({ row }: { row: HolderRow }) {
+// One P&L cell: "+X SOL (Y%)". Pure earners (zero SOL paid) show
+// "+X free" instead — a percentage over a 0-SOL base is meaningless.
+function PnLCell({ row }: { row: HolderRow }) {
   const pure = isPureEarner(row)
-  const mixed = isMixedEarner(row)
-  // For pure earners, show the SOL value of their earned credits as a
-  // green "free" gain — they paid 0 SOL, so the conventional P&L %
-  // (divisor = 0) is meaningless.
   if (pure) {
     return (
-      <>
-        <td className="text-right px-2 py-2 font-bold text-[var(--color-green)]">
-          +{fmtSolFloat(row.earnedSol || 0)}
-        </td>
-        <td className="text-right px-2 py-2 text-[var(--color-ember)] text-[10px] uppercase tracking-[2px]">
+      <td className="text-right px-2 py-2 font-bold text-[var(--color-green)]">
+        +{fmtSolFloat(row.earnedSol || 0)}
+        <span className="ml-1 text-[9px] text-[var(--color-ember)] uppercase tracking-[2px]">
           free
-        </td>
-      </>
+        </span>
+      </td>
     )
   }
-  const adj = adjustedPnl(row)
-  const profitable = adj >= 0
-  const color = profitable ? 'text-[var(--color-green)]' : 'text-[var(--color-warn)]'
-  // Use ROI on gross deposited (lifetime return) instead of API's
-  // netSolIn-based pnlPct. Heavy churners look sane this way.
+  const pnl = adjustedPnl(row)
+  const color = pnl >= 0 ? 'text-[var(--color-green)]' : 'text-[var(--color-warn)]'
   const roi = roiPctOnGross(row)
-  const paidColor = row.pnlSol >= 0
-    ? 'text-[var(--color-green)]'
-    : 'text-[var(--color-warn)]'
+  const mixed = isMixedEarner(row)
   return (
-    <>
-      <td className={`text-right px-2 py-2 font-bold ${color}`}>
-        <span title={
-          mixed
-            ? `realized + unrealized P&L. of this, +${fmtSolFloat(row.earnedSol || 0)} SOL came from referral / manager-fee kickbacks (free upside, already included — not additive).`
-            : `realized + unrealized over total deposited`
-        }>
-          {adj >= 0 ? '+' : '−'}
-          {fmtSolFloat(Math.abs(adj))}
+    <td
+      className={`text-right px-2 py-2 font-bold ${color}`}
+      title={
+        mixed
+          ? `of this, +${fmtSolFloat(row.earnedSol || 0)} SOL came free via referral / manager-fee credits (already included, not additive)`
+          : undefined
+      }
+    >
+      {pnl >= 0 ? '+' : '−'}
+      {fmtSolFloat(Math.abs(pnl))}
+      {roi != null && (
+        <span className="ml-1 font-normal opacity-70">
+          ({(roi * 100).toFixed(1)}%)
         </span>
-        {mixed && (
-          <span
-            className="ml-1 text-[9px] text-[var(--color-ember)] uppercase tracking-[2px]"
-            title={`of which +${fmtSolFloat(row.earnedSol || 0)} SOL came free via referral / manager-fee credits`}
-          >
-            (incl. {fmtSolFloat(row.earnedSol || 0)}f)
-          </span>
-        )}
-      </td>
-      <td className={`text-right px-2 py-2 ${paidColor}`}
-          title="lifetime ROI on paid SOL only — referral / manager-fee credits boost the SOL column on the left without consuming paid capital, so this ratio measures paid trading skill in isolation">
-        {roi == null ? '—' : `${(roi * 100).toFixed(1)}%`}
-      </td>
-    </>
+      )}
+    </td>
   )
 }
 
@@ -1010,7 +766,10 @@ function HolderRowDesktop({
     : underwater
     ? 'bg-[rgb(255_204_0_/_0.04)] border-b border-[rgb(255_34_0_/_0.06)]'
     : 'border-b border-[rgb(255_34_0_/_0.06)]'
-  const earnedCount = (row.referralEarnedCount || 0) + (row.managerFeeEarnedCount || 0)
+  const worthSol =
+    currentRate != null
+      ? (Number(BigInt(row.totalStacAtom)) / 1e9) * currentRate * 0.931
+      : null
   return (
     <tr className={baseClass}>
       <td className="text-left pl-3 pr-2 py-2 text-[var(--color-dim)] font-black">
@@ -1027,7 +786,7 @@ function HolderRowDesktop({
           {(pure || mixed) && (
             <span
               className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-green)] text-[var(--color-green)] bg-[rgb(0_180_0_/_0.08)]"
-              title={`earned ${fmtSolFloat(row.earnedSol || 0)} SOL of stacSOL value across ${earnedCount} referral/manager-fee credit${earnedCount === 1 ? '' : 's'} (zero SOL paid)`}
+              title={`earned ${fmtSolFloat(row.earnedSol || 0)} SOL of stacSOL value via referral / manager-fee credits (zero SOL paid)`}
             >
               earned
             </span>
@@ -1035,7 +794,7 @@ function HolderRowDesktop({
           {hasTransferredOut(row) && (
             <span
               className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-dim)] text-[var(--color-dim)] bg-[var(--color-bg)]"
-              title={`sent out ~${fmtAmount(BigInt(row.transferredOutAtom))} stac via Token-2022 transfer (≈${fmtSolFloat(row.transferredOutSol)} SOL at NAV); counted in P&L as implicit burn`}
+              title={`moved ~${fmtAmount(BigInt(row.transferredOutAtom))} stac out of the wallet (LPs, transfers — ≈${fmtSolFloat(row.transferredOutSol)} SOL at NAV). P&L counts it as an implicit burn, which is why P&L can beat the held bag.`}
             >
               sent →
             </span>
@@ -1043,7 +802,7 @@ function HolderRowDesktop({
           {hasTransferredIn(row) && (
             <span
               className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-dim)] text-[var(--color-dim)] bg-[var(--color-bg)]"
-              title={`received ~${fmtAmount(BigInt(row.transferredInAtom))} stac via Token-2022 transfer (≈${fmtSolFloat(row.transferredInSol)} SOL at NAV); zero SOL paid`}
+              title={`received ~${fmtAmount(BigInt(row.transferredInAtom))} stac via transfer (zero SOL paid)`}
             >
               ← recv
             </span>
@@ -1053,18 +812,20 @@ function HolderRowDesktop({
               you
             </span>
           )}
-          {BigInt(row.hawkfiStacAtom) > 0n && (
-            <span
-              className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]"
-              title={`includes ${fmtAmount(BigInt(row.hawkfiStacAtom))} stac in HawkFi userPda ATA`}
-            >
-              · hawkfi
-            </span>
-          )}
         </div>
       </td>
-      <td className="text-right px-2 py-2 text-[var(--color-fg)] font-bold">
-        {fmtAmount(BigInt(row.totalStacAtom))}
+      <td className="text-right px-2 py-2">
+        <div className="text-[var(--color-fg)] font-bold">
+          {fmtAmount(BigInt(row.totalStacAtom))}
+        </div>
+        {worthSol != null && worthSol > 0 && (
+          <div
+            className="text-[9px] text-[var(--color-dim)]"
+            title="what this bag pays out if burned right now (held × NAV × 0.931)"
+          >
+            ≈ {worthSol.toLocaleString(undefined, { maximumFractionDigits: 2 })} SOL
+          </div>
+        )}
       </td>
       <td className="text-right px-2 py-2 text-[var(--color-dim)]">
         {pure ? (
@@ -1082,21 +843,9 @@ function HolderRowDesktop({
           })()
         )}
       </td>
-      <PnLCells row={row} />
-      <td className="text-right px-2 py-2 text-[var(--color-dim)] hidden lg:table-cell">
-        {row.firstEventAt ? `${fmtRel(row.firstEventAt)} ago` : '—'}
-      </td>
+      <PnLCell row={row} />
       <td className="text-right px-2 py-2 text-[var(--color-dim)] hidden lg:table-cell">
         {row.lastEventAt ? `${fmtRel(row.lastEventAt)} ago` : '—'}
-      </td>
-      <td className="text-right px-2 py-2 text-[var(--color-dim)] font-mono">
-        {pure ? '—' : breakevenDisplay(row, currentRate)}
-      </td>
-      <td className="text-right pl-2 pr-3 py-2 text-[var(--color-dim)] hidden lg:table-cell">
-        {row.mintCount}m / {row.burnCount}b
-        {earnedCount > 0 && (
-          <span className="text-[var(--color-green)]"> · {earnedCount}e</span>
-        )}
       </td>
     </tr>
   )
@@ -1129,7 +878,10 @@ function HolderCardMobile({
     : underwater
     ? 'text-[var(--color-warn)]'
     : 'text-[var(--color-green)]'
-  const earnedCount = (row.referralEarnedCount || 0) + (row.managerFeeEarnedCount || 0)
+  const worthSol =
+    currentRate != null
+      ? (Number(BigInt(row.totalStacAtom)) / 1e9) * currentRate * 0.931
+      : null
   return (
     <div className={`rounded border p-3 ${ringClass}`}>
       <div className="flex items-center justify-between gap-2 mb-1">
@@ -1156,22 +908,6 @@ function HolderCardMobile({
               earned
             </span>
           )}
-          {hasTransferredOut(row) && (
-            <span
-              className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-dim)] text-[var(--color-dim)] bg-[var(--color-bg)]"
-              title={`sent ~${fmtAmount(BigInt(row.transferredOutAtom))} stac via transfer`}
-            >
-              sent
-            </span>
-          )}
-          {hasTransferredIn(row) && (
-            <span
-              className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-dim)] text-[var(--color-dim)] bg-[var(--color-bg)]"
-              title={`received ~${fmtAmount(BigInt(row.transferredInAtom))} stac via transfer`}
-            >
-              recv
-            </span>
-          )}
           {isMe && (
             <span className="px-1.5 py-0.5 rounded text-[8px] uppercase tracking-[2px] font-black border border-[var(--color-ember)] text-[var(--color-ember)] bg-[rgb(255_119_51_/_0.1)]">
               you
@@ -1187,6 +923,12 @@ function HolderCardMobile({
           <div className="font-mono text-[var(--color-fg)]">
             {fmtAmount(BigInt(row.totalStacAtom))}
           </div>
+          {worthSol != null && worthSol > 0 && (
+            <div className="text-[9px] text-[var(--color-dim)]">
+              ≈ {worthSol.toLocaleString(undefined, { maximumFractionDigits: 2 })}{' '}
+              SOL if burned
+            </div>
+          )}
         </div>
         <div>
           <div className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]">
@@ -1218,16 +960,11 @@ function HolderCardMobile({
               </>
             )}
           </div>
-          {mixed && (
-            <div className="text-[9px] text-[var(--color-ember)] mt-0.5">
-              incl. +{fmtSolFloat(row.earnedSol || 0)} SOL earned
-            </div>
-          )}
         </div>
         <div>
           <div
             className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]"
-            title="Cost basis of the currently-held position: gross_sol_in − gross_sol_out. This equals stacSOL_held × break-even NAV, and is what you'd need NAV to recover for a wash exit."
+            title="Net SOL paid in: lifetime deposits minus SOL already taken back out via burns."
           >
             cost basis
           </div>
@@ -1244,25 +981,6 @@ function HolderCardMobile({
                   const net = grossIn > grossOut ? grossIn - grossOut : 0n
                   return `${fmtSolNum(net.toString())} SOL`
                 })()}
-          </div>
-        </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]">
-            break-even
-          </div>
-          <div className="font-mono text-[var(--color-dim)]">
-            {pure ? '—' : breakevenDisplay(row, currentRate)}
-          </div>
-        </div>
-        <div>
-          <div className="text-[9px] uppercase tracking-[2px] text-[var(--color-dim)]">
-            flows
-          </div>
-          <div className="font-mono text-[var(--color-dim)]">
-            {row.mintCount} mint / {row.burnCount} burn
-            {earnedCount > 0 && (
-              <span className="text-[var(--color-green)]"> · {earnedCount} earned</span>
-            )}
           </div>
         </div>
         <div>

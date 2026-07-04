@@ -11,7 +11,6 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useConnection, useWallet } from '@solana/wallet-adapter-react'
 import { useWalletModal } from '@solana/wallet-adapter-react-ui'
 import EditorialNav from './components/EditorialNav'
-import { ReferralCard } from './components/ReferralCard'
 import WalletPill from './components/WalletPill'
 import {
   ComputeBudgetProgram,
@@ -37,7 +36,7 @@ import {
   ixDepositSol,
   ixWithdrawSol,
 } from './lib/ix'
-import { deriveReferrerAtaAndCreateIx, useReferrer } from './lib/referrer'
+import { deriveReferrerAtaAndCreateIx, MARKETING_REFERRER } from './lib/referrer'
 import {
   ixWrap,
   ixUnwrap,
@@ -105,14 +104,41 @@ function PoolStats({ pool, rate, perf }: { pool: PoolState | null; rate: number;
   // latter only re-syncs at UpdateStakePoolBalance, so it misses out-of-band
   // burns until the next crank. Same for the NAV passed in via `rate`.
   const supply = pool ? Number(pool.mintSupply) / 1e9 : 0
+
+  // Burn flash — mint.supply dropping means a burn just landed on-chain.
+  // Supply rising = a mint landed. Both push a 1.2s pulse; the pulse is the
+  // only "loud" motion on the strip and it always corresponds to a real
+  // event, never to the per-second extrapolation.
+  const supplyAtom = pool?.mintSupply ?? null
+  const prevSupply = useRef<bigint | null>(null)
+  const [flash, setFlash] = useState<'burn' | 'mint' | null>(null)
+  useEffect(() => {
+    if (supplyAtom == null) return
+    const prev = prevSupply.current
+    prevSupply.current = supplyAtom
+    if (prev == null || prev === supplyAtom) return
+    setFlash(supplyAtom < prev ? 'burn' : 'mint')
+    const id = setTimeout(() => setFlash(null), 1200)
+    return () => clearTimeout(id)
+  }, [supplyAtom])
+
   const stats = [
     { k: 'Backing', v: fmt(backing), u: 'SOL', s: 'pool.total_lamports' },
-    { k: 'Supply', v: fmt(supply), u: 'stacSOL', s: 'mint.supply — live' },
+    {
+      k: 'Supply',
+      v: fmt(supply),
+      u: 'stacSOL',
+      s: 'mint.supply — streaming',
+      flash: flash != null,
+    },
+    // "(live)" means exactly that: the on-chain value, streamed. No
+    // extrapolation here — the ticker digits only move when the chain does.
     {
       k: 'NAV (live)',
-      v: rate.toFixed(6),
+      v: rate.toFixed(9),
       u: 'SOL/stacSOL',
-      s: 'backing ÷ live supply',
+      s: 'backing ÷ live supply · websocket',
+      flash: flash === 'burn',
     },
     {
       k: 'Daily yield',
@@ -130,18 +156,25 @@ function PoolStats({ pool, rate, perf }: { pool: PoolState | null; rate: number;
         style={{
           display: 'flex',
           alignItems: 'baseline',
-          justifyContent: 'space-between',
+          justifyContent: 'flex-start',
+          gap: 8,
           marginBottom: 6,
         }}
       >
         <span className={`live-chip ${live ? '' : 'dim'}`}>
           <span className="dot" />
-          {live ? 'live · on-chain' : 'fallback data'}
+          {live ? 'streaming · websocket' : 'fallback data'}
         </span>
+        {flash === 'burn' && (
+          <span className="live-chip burn-chip">🔥 burn landed</span>
+        )}
+        {flash === 'mint' && (
+          <span className="live-chip mint-chip">✦ mint landed</span>
+        )}
       </div>
       <div className="stats">
         {stats.map((s, i) => (
-          <div className="stat" key={i}>
+          <div className={`stat ${s.flash ? 'flash-up' : ''}`} key={i}>
             <div className="stat-k">{s.k}</div>
             <div className="stat-v tabular">
               {s.v}
@@ -199,13 +232,6 @@ function ActionPanel({
   const { connection } = useConnection()
   const wallet = useWallet()
   const modal = useWalletModal()
-  // Referrer (from `?ref=<pubkey>` → localStorage → marketing default). The
-  // 50% of the 6.9% deposit fee that the stake-pool routes to a referrer ATA
-  // depends on which ATA we drop into slot 6 of DepositSol. Without this
-  // hook every mint silently self-referrals via lib/ix.ts's `referral ??
-  // userAta` fallback — neither the user's intended referrer nor the
-  // marketing wallet gets credited.
-  const ref = useReferrer()
   const [tab, setTab] = useState<Tab>('mint')
   const [amt, setAmt] = useState('')
   const [activePct, setActivePct] = useState<number | null>(null)
@@ -348,17 +374,13 @@ function ActionPanel({
         if (tab === 'mint' && pool) {
           ixs.push(ixCreateAtaIdempotent(pubkey, pubkey, MINT))
           // Referrer ATA gets the 50% referrer share of the 6.9% deposit
-          // fee. Skip the explicit create when the depositor is referring
-          // themselves (their ATA already exists from the create above).
-          const referringSelf = ref.referrer.equals(pubkey)
+          // fee — always the marketing wallet.
           const { referrerAta, createIx: refCreateIx } = deriveReferrerAtaAndCreateIx({
             payer: pubkey,
-            referrer: ref.referrer,
+            referrer: MARKETING_REFERRER,
           })
-          if (!referringSelf) ixs.push(refCreateIx)
-          ixs.push(
-            ixDepositSol(pubkey, atoms, pool, referringSelf ? undefined : referrerAta),
-          )
+          ixs.push(refCreateIx)
+          ixs.push(ixDepositSol(pubkey, atoms, pool, referrerAta))
           outputAddress = deriveAta(pubkey, MINT, TOKEN_2022)
           preAtoms = walletStacAtom ?? 0n
         } else if (tab === 'burn' && pool) {
@@ -568,24 +590,14 @@ function ActionPanel({
         const userAta = deriveAta(wallet.publicKey, MINT, TOKEN_2022)
         const acc = await connection.getAccountInfo(userAta, 'processed')
         if (!acc) ixs.push(ixCreateAtaIdempotent(wallet.publicKey, wallet.publicKey, MINT))
-        // Referrer ATA — collects 50% of the 6.9% deposit fee. Defaults to
-        // marketing wallet when no `?ref=…` link was used; honours the
-        // user's saved override otherwise. Skip the create when the
-        // depositor IS the referrer (their ATA already exists from above).
-        const referringSelf = ref.referrer.equals(wallet.publicKey)
+        // Referrer ATA — collects 50% of the 6.9% deposit fee. Always the
+        // marketing wallet.
         const { referrerAta, createIx: refCreateIx } = deriveReferrerAtaAndCreateIx({
           payer: wallet.publicKey,
-          referrer: ref.referrer,
+          referrer: MARKETING_REFERRER,
         })
-        if (!referringSelf) ixs.push(refCreateIx)
-        ixs.push(
-          ixDepositSol(
-            wallet.publicKey,
-            lamports,
-            pool,
-            referringSelf ? undefined : referrerAta,
-          ),
-        )
+        ixs.push(refCreateIx)
+        ixs.push(ixDepositSol(wallet.publicKey, lamports, pool, referrerAta))
       } else if (tab === 'burn') {
         if (!pool) return
         // Prefer the bigint captured by max — see setPercent + onChange.
@@ -1048,6 +1060,20 @@ function PositionCard({
   // now, after the 6.9% withdraw fee. P&L below is computed against this
   // because that's the only value you can extract.
   const netValue = grossValue * (1 - FEE)
+
+  // Flash the big balance jade when the on-chain balance actually changes —
+  // a mint/burn/transfer just landed in the ATA via the websocket.
+  const prevBal = useRef<bigint | null>(null)
+  const [balFlash, setBalFlash] = useState(false)
+  useEffect(() => {
+    if (walletStacAtom == null) return
+    const prev = prevBal.current
+    prevBal.current = walletStacAtom
+    if (prev == null || prev === walletStacAtom) return
+    setBalFlash(true)
+    const id = setTimeout(() => setBalFlash(false), 1200)
+    return () => clearTimeout(id)
+  }, [walletStacAtom])
   // Authoritative cost basis from the indexer (DepositSol ix data only) —
   // falls back to ATA-walk position numbers, then to zero.
   const costSol = holderRow
@@ -1114,17 +1140,17 @@ function PositionCard({
           style={{ padding: '2px 8px', fontSize: 9 }}
         >
           <span className="dot" />
-          {connected ? 'on-chain' : 'demo'}
+          {connected ? 'streaming' : 'demo'}
         </span>
       </div>
-      <div className="position-bal tabular">
+      <div className={`position-bal tabular ${balFlash ? 'flash-up' : ''}`}>
         {balanceLoading ? (
           <span style={{ color: 'var(--ink-faint)' }}>
             <span className="spin" style={{ marginRight: 10 }} />—
           </span>
         ) : (
           <>
-            {fmt(total, 6)}
+            {fmt(total, 9)}
             <span className="unit">stacSOL</span>
           </>
         )}
@@ -1136,7 +1162,8 @@ function PositionCard({
           </span>
         ) : (
           <>
-            ≈ <b className="tabular">{fmt(netValue)} SOL</b> if burned now
+            ≈ <b className="tabular">{fmt(netValue, 9)} SOL</b>{' '}
+            if burned now
             <span style={{ color: 'var(--ink-muted)' }}>
               {' · '}
               {fmt(grossValue)} at NAV
@@ -1176,7 +1203,7 @@ function PositionCard({
         <div className="pt-row">
           <span className="pt-k">In wallet</span>
           <span className="pt-v tabular">
-            {ld(balanceLoading, `${fmt(walletStac, 6)} stacSOL`)}
+            {ld(balanceLoading, `${fmt(walletStac, 9)} stacSOL`)}
           </span>
         </div>
         <div className="pt-row">
@@ -1200,13 +1227,13 @@ function PositionCard({
         <div className="pt-row">
           <span className="pt-k">Mark · NAV {rate.toFixed(6)}</span>
           <span className="pt-v tabular">
-            {ld(balanceLoading, `${fmt(grossValue)} SOL`)}
+            {ld(balanceLoading, `${fmt(grossValue, 9)} SOL`)}
           </span>
         </div>
         <div className="pt-row">
           <span className="pt-k">Burn payout (−6.9%)</span>
           <span className="pt-v tabular">
-            {ld(balanceLoading, `${fmt(netValue)} SOL`)}
+            {ld(balanceLoading, `${fmt(netValue, 9)} SOL`)}
           </span>
         </div>
         {hasCostBasis && !balanceLoading && !costLoading && (
@@ -1333,7 +1360,7 @@ export default function App() {
               </span>
             </h1>
             <div className="dash-sub">
-              protocol live · pool E6oqvrLK…Qixqb · refresh 10s
+              protocol live · pool E6oqvrLK…Qixqb · streaming via websocket
             </div>
 
             <PoolStats pool={pool} rate={navLive} perf={perf} />
@@ -1361,7 +1388,6 @@ export default function App() {
               lpStac={lpStac}
               connected={wallet.connected}
             />
-            <ReferralCard />
             <QuickActions />
           </aside>
         </div>

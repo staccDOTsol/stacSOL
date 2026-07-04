@@ -333,19 +333,14 @@ export default function Faq() {
               <>
                 <p>
                   The 6.9% deposit fee splits 50/50 between the manager
-                  (stacc) and a "referrer" wallet. That referrer slot defaults
-                  to the marketing wallet (
+                  (stacc) and a "referrer" wallet. That referrer slot is
+                  always the marketing wallet (
                   <code>Bq4KMa…fF6j</code>
-                  ); anyone landing on{' '}
-                  <a href="https://stacsol.app/">stacsol.app</a>{' '}
-                  via a <code>?ref=&lt;your-pubkey&gt;</code> link redirects
-                  it to <em>your</em> wallet on every mint they sign through
-                  it.
+                  ) — the UI does not support custom referrers.
                 </p>
                 <p>
-                  Result: ≈3.45% of every referred mint lands as stacSOL in
-                  the referrer's ATA. Connect your wallet on the homepage to
-                  generate your share link.
+                  Result: ≈3.45% of every mint lands as stacSOL in the
+                  marketing wallet's ATA, funding the marketing budget.
                 </p>
               </>
             }

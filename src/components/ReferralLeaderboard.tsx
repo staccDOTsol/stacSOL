@@ -9,9 +9,12 @@
 // Gamification layer on top of the raw table:
 //   - A 🥇🥈🥉 podium for the top 3 (raised middle, glow, medal).
 //   - Fee bars on every ranked row, width ∝ fee relative to #1.
-//   - A "YOU" hero: your rank + earnings + your personal share link (the same
-//     ?ref= mechanism surfaced in ReferralCard), with a one-tap copy + tweet.
+//   - A "YOU" strip: your rank + earnings when connected.
 //   - Doxx opt-in on your own row (anonymous pseudonym by default).
+//
+// Historical record only — the UI no longer supports custom referrers
+// (every deposit credits the marketing wallet), so there is no share-link
+// mechanism here anymore.
 
 import { useEffect, useMemo, useState } from 'react'
 import { useWallet } from '@solana/wallet-adapter-react'
@@ -19,8 +22,6 @@ import { LAMPORTS_PER_SOL } from '@solana/web3.js'
 import { Card } from './Stats'
 import { fmtAmount } from '../lib/format'
 import { WalletIdentity, DoxxToggle, type DoxxIdentity } from './walletDoxx'
-import { useReferrer } from '../lib/referrer'
-import { TwitterBird } from './icons'
 
 interface LeaderboardRow extends DoxxIdentity {
   rank: number
@@ -69,12 +70,10 @@ const MEDALS = ['🥇', '🥈', '🥉']
 
 export function ReferralLeaderboard() {
   const { publicKey } = useWallet()
-  const ref = useReferrer()
   const [data, setData] = useState<LeaderboardResponse | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [includeHouse, setIncludeHouse] = useState(false)
   const [copiedKey, setCopiedKey] = useState<string | null>(null)
-  const [copiedLink, setCopiedLink] = useState(false)
   const [refreshTick, setRefreshTick] = useState(0)
 
   useEffect(() => {
@@ -119,21 +118,6 @@ export function ReferralLeaderboard() {
     } catch { /* ignore */ }
   }
 
-  const shareUrl = publicKey ? ref.buildShareUrl(publicKey) : null
-  const copyLink = async () => {
-    if (!shareUrl) return
-    try {
-      await navigator.clipboard.writeText(shareUrl)
-      setCopiedLink(true)
-      setTimeout(() => setCopiedLink(false), 1500)
-    } catch { /* ignore */ }
-  }
-  const tweetHref = shareUrl
-    ? `https://twitter.com/intent/tweet?text=${encodeURIComponent(
-        `🔥 mint $stacSOL via my link — I earn 3.45% of every referred mint as stacSOL\n${shareUrl}`,
-      )}`
-    : '#'
-
   const totalFeeSol = data ? stacAtomToSol(data.totals.feeStacsol, nav, payout) : null
   const totalReferred = data ? lamportsToSol(data.totals.solReferred) : 0
 
@@ -141,7 +125,7 @@ export function ReferralLeaderboard() {
   const myReferred = myRow ? lamportsToSol(myRow.solReferred) : 0
 
   return (
-    <Card title="🏆 Referral leaderboard · earn 3.45% of every referred mint">
+    <Card title="🏆 Referral leaderboard · lifetime referral fees">
       {/* Totals strip */}
       {data && (
         <div className="flex flex-wrap gap-x-5 gap-y-1.5 mb-4 text-[10px] uppercase tracking-[2px] text-[var(--color-dim)]">
@@ -156,13 +140,13 @@ export function ReferralLeaderboard() {
         </div>
       )}
 
-      {/* YOUR share-link hero */}
-      <div className="mb-5 rounded-lg border border-[rgb(255_119_51_/_0.45)] bg-gradient-to-br from-[rgb(255_119_51_/_0.10)] to-[rgb(255_34_0_/_0.04)] p-3.5">
-        <div className="flex items-center justify-between gap-2 flex-wrap mb-2">
-          <span className="text-[10px] uppercase tracking-[2px] text-[var(--color-ember)] font-black">
-            your referral link
-          </span>
-          {myRow && (
+      {/* YOUR rank strip — only when the connected wallet is on the board */}
+      {myRow && (
+        <div className="mb-5 rounded-lg border border-[rgb(255_119_51_/_0.45)] bg-gradient-to-br from-[rgb(255_119_51_/_0.10)] to-[rgb(255_34_0_/_0.04)] p-3.5">
+          <div className="flex items-center justify-between gap-2 flex-wrap">
+            <span className="text-[10px] uppercase tracking-[2px] text-[var(--color-ember)] font-black">
+              you
+            </span>
             <span className="text-[11px] font-black text-[var(--color-fg)]">
               you&apos;re{' '}
               <span className="text-[var(--color-ember)]">#{myRow.rank}</span>
@@ -172,50 +156,13 @@ export function ReferralLeaderboard() {
                 </span>
               )}
             </span>
-          )}
-          {publicKey && !myRow && (
-            <span className="text-[10px] text-[var(--color-dim)]">
-              no referrals yet — share to get on the board
-            </span>
-          )}
-        </div>
-        {shareUrl ? (
-          <div className="grid grid-cols-[1fr_auto_auto] gap-2">
-            <input
-              readOnly
-              value={shareUrl}
-              onFocus={(e) => e.currentTarget.select()}
-              className="w-full px-3 py-2 bg-[var(--color-bg)] text-[var(--color-fg)] border border-[rgb(255_51_0_/_0.4)] rounded font-mono text-[11px] focus:outline-none focus:border-[var(--color-hot)]"
-            />
-            <button
-              type="button"
-              onClick={copyLink}
-              className="px-3 py-2 bg-[var(--color-hot)] text-black font-black uppercase tracking-wider text-[11px] rounded hover:brightness-110"
-            >
-              {copiedLink ? '✓' : 'copy'}
-            </button>
-            <a
-              href={tweetHref}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="px-3 py-2 border border-[var(--color-hot)] text-[var(--color-hot)] rounded hover:bg-[var(--color-hot)] hover:text-black transition-colors grid place-items-center"
-              title="Tweet your link"
-            >
-              <TwitterBird className="w-4 h-4" />
-            </a>
           </div>
-        ) : (
-          <div className="px-3 py-2 bg-[var(--color-bg)] text-[var(--color-dim)] border border-[rgb(255_51_0_/_0.2)] rounded font-mono text-[11px]">
-            connect wallet to generate your share link
-          </div>
-        )}
-        {myRow && (
           <div className="mt-2 flex items-center justify-between gap-2 flex-wrap text-[10px] text-[var(--color-dim)] font-mono">
             <span>{fmtSol(myReferred, 2)} ◎ referred · {myRow.deposits} deposits</span>
             <DoxxToggle row={myRow} onChanged={() => setRefreshTick((t) => t + 1)} />
           </div>
-        )}
-      </div>
+        </div>
+      )}
 
       {error && <div className="text-[11px] text-[var(--color-warn)] mb-3">could not load leaderboard: {error}</div>}
       {!data && !error && (

@@ -12,7 +12,7 @@ import {
 import { Card } from './Stats'
 import { deriveAta, ixCreateAtaIdempotent, ixDepositSol, ixWithdrawSol } from '../lib/ix'
 import { DECIMALS, MINT, TOKEN_2022 } from '../lib/constants'
-import { deriveReferrerAtaAndCreateIx, useReferrer } from '../lib/referrer'
+import { deriveReferrerAtaAndCreateIx, MARKETING_REFERRER } from '../lib/referrer'
 import { useSolBalance } from '../hooks/useSolBalance'
 import type { PoolState } from '../lib/pool'
 import type { Position } from '../lib/position'
@@ -61,7 +61,6 @@ export function Action({
   const [busy, setBusy] = useState(false)
   const [status, setStatus] = useState<ActionStatus | null>(null)
   const cardRef = useRef<HTMLDivElement>(null)
-  const ref = useReferrer()
 
   // Shared SOL balance — both Action cards (mint + burn) and the WalletCard
   // subscribe to the same poll loop via this hook so we don't fan out
@@ -135,19 +134,17 @@ export function Action({
         // shaves ~50 bytes each AND reduces account-meta count, both
         // of which help the mobile parser.
         const userAta = deriveAta(publicKey, MINT, TOKEN_2022)
-        const referralAta = ref.referrer.equals(publicKey)
-          ? undefined
-          : deriveReferrerAtaAndCreateIx({
-              payer: publicKey,
-              referrer: ref.referrer,
-            }).referrerAta
+        const { referrerAta: referralAta, createIx: referralCreateIx } =
+          deriveReferrerAtaAndCreateIx({
+            payer: publicKey,
+            referrer: MARKETING_REFERRER,
+          })
 
-        // One getMultipleAccountsInfo call covers both checks.
-        const checkAcc: PublicKey[] = [userAta]
-        if (referralAta) checkAcc.push(referralAta)
+        // One getMultipleAccountsInfo call covers all checks.
+        const checkAcc: PublicKey[] = [userAta, referralAta]
         const accInfos = await connection.getMultipleAccountsInfo(checkAcc, 'processed')
         const userAtaExists = accInfos[0] != null
-        const referralAtaExists = referralAta != null && accInfos[1] != null
+        const referralAtaExists = accInfos[1] != null
 
         if (!userAtaExists) {
           ixs.push(ixCreateAtaIdempotent(publicKey, publicKey, MINT))
@@ -155,25 +152,16 @@ export function Action({
         // Repeat ATA precheck and create for both REFERRER and MANAGER fee ATAs.
 
         // 1. Referrer ATA
-        if (referralAta && !referralAtaExists) {
+        if (!referralAtaExists) {
           // Note: still uses `Idempotent` variant in case of a race —
           // safe even if another tx creates it between our check and the
           // landing of this tx.
-          ixs.push(
-            deriveReferrerAtaAndCreateIx({
-              payer: publicKey,
-              referrer: ref.referrer,
-            }).createIx,
-          )
+          ixs.push(referralCreateIx)
         }
 
-        // In accInfos, managerAta is always after userAta and (if present) referralAta.
-        // So its index is 1 (if no referralAta), or 2 (if referralAta exists).
-        const managerAtaIdx = referralAta ? 2 : 1
-        const managerAtaExists = accInfos[managerAtaIdx] != null
-        if (!managerAtaExists) {
-          ixs.push(ixCreateAtaIdempotent(publicKey, pool.managerFeeAccount, MINT))
-        }
+        // 2. Manager fee ATA — no precheck (it isn't in checkAcc), the
+        // idempotent create is a safe no-op when it already exists.
+        ixs.push(ixCreateAtaIdempotent(publicKey, pool.managerFeeAccount, MINT))
 
         ixs.push(ixDepositSol(publicKey, lamports, pool, referralAta))
       } else {

@@ -222,119 +222,6 @@ function MobileDrawer({
   )
 }
 
-// Sticky validator-pointer banner — TL;DR of stacSOL's backing infra so
-// visitors can independently verify the validator is real, live, and ours.
-// Dismissal persists via localStorage; bump BANNER_VERSION to re-show after
-// material updates. The previous FOMOX402 → stacSOL migration banner shipped
-// under the '2026-05-25-stacsol' version key and is now retired.
-const BANNER_VERSION = '2026-05-27-validator'
-const BANNER_KEY = `stacsol_banner_dismissed_${BANNER_VERSION}`
-const VALIDATOR_URL =
-  'https://www.validators.app/validators/3ENj7S6zgjbkH1dLx6okTeLu6n1SPbHn4vCc2KD7r5GF?locale=en&network=mainnet'
-
-function MigrationBanner() {
-  const [dismissed, setDismissed] = useState<boolean | null>(null)
-  useEffect(() => {
-    try {
-      setDismissed(localStorage.getItem(BANNER_KEY) === '1')
-    } catch {
-      setDismissed(false)
-    }
-  }, [])
-  if (dismissed !== false) return null
-  // Hardcoded colors instead of theme vars — `--ink` and `--ivory` invert
-  // meaning between light/dark mode (they're page text/page paper, not
-  // fixed paint values), so using them as banner background made the
-  // text vanish in light mode (light text on light page bg). Banner
-  // wants to be a constant-dark surface across BOTH themes so the
-  // editorial palette stays calm and the announcement stays legible.
-  const BANNER_BG = '#0a0a0a'
-  const BANNER_FG = '#f7f5ee'
-  const BANNER_LINE = 'rgba(255,255,255,0.18)'
-  const BANNER_LINK = '#7BE0A4'
-  return (
-    <div
-      role="region"
-      aria-label="stacSOL validator announcement"
-      style={{
-        background: BANNER_BG,
-        color: BANNER_FG,
-        borderBottom: `1px solid ${BANNER_LINE}`,
-        fontFamily: 'var(--f-sans)',
-        fontSize: 13,
-        lineHeight: 1.45,
-        position: 'sticky',
-        top: 0,
-        zIndex: 1000,
-      }}
-    >
-      <div
-        className="shell"
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 16,
-          padding: '8px 0',
-          flexWrap: 'wrap',
-        }}
-      >
-        <span style={{ flex: '1 1 auto', minWidth: 220, color: BANNER_FG }}>
-          <strong style={{ fontFamily: 'var(--f-display)', letterSpacing: '0.01em', color: BANNER_FG }}>
-            stacSOL validator is live.
-          </strong>{' '}
-          We run our own node on patched agave with native TowerSync vote
-          batching · 100% commission, kept as operator revenue — the batching
-          is what makes a small validator pay for itself. NAV grows from the
-          6.9% burn, not the validator. Independently verify on{' '}
-          <a
-            href={VALIDATOR_URL}
-            target="_blank"
-            rel="noreferrer"
-            style={{
-              color: BANNER_LINK,
-              textDecoration: 'underline',
-              textDecorationThickness: 1,
-              textUnderlineOffset: 2,
-            }}
-          >
-            validators.app
-          </a>
-          . Vote account{' '}
-          <code style={{ fontFamily: 'var(--f-mono)', fontSize: 11, color: BANNER_FG }}>
-            3ENj…r5GF
-          </code>
-          .
-        </span>
-        <button
-          type="button"
-          onClick={() => {
-            try {
-              localStorage.setItem(BANNER_KEY, '1')
-            } catch {
-              /* fall through */
-            }
-            setDismissed(true)
-          }}
-          aria-label="Dismiss"
-          style={{
-            border: `1px solid ${BANNER_LINE}`,
-            background: 'transparent',
-            color: BANNER_FG,
-            fontFamily: 'var(--f-mono)',
-            fontSize: 11,
-            letterSpacing: '0.04em',
-            padding: '4px 10px',
-            cursor: 'pointer',
-            flex: '0 0 auto',
-          }}
-        >
-          DISMISS ✕
-        </button>
-      </div>
-    </div>
-  )
-}
-
 export default function EditorialNav({
   pathname,
   ctaLabel = 'Mint stacSOL',
@@ -347,7 +234,6 @@ export default function EditorialNav({
   const [menuOpen, setMenuOpen] = useState(false)
   return (
     <>
-      <MigrationBanner />
       <nav className="nav">
         <div className="shell nav-inner">
           <a href="/" className="nav-mark">
