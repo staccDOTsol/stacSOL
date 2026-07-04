@@ -391,6 +391,26 @@ const server = Bun.serve({
       }
       return Response.json({ ok: true, mint: MINT, symbol: overview?.symbol ?? "" }, { headers: CORS });
     }
+    if (p === "/api/search") {
+      const q = (url.searchParams.get("q") ?? "").trim();
+      if (q.length < 2) return Response.json({ items: [] }, { headers: CORS });
+      try {
+        const r = await be(
+          `/defi/v3/search?keyword=${encodeURIComponent(q)}&target=token&sort_by=liquidity&sort_type=desc&offset=0&limit=12`,
+        );
+        const toks = (r?.data?.items ?? []).flatMap((g) => g.result ?? []);
+        const items = toks
+          .filter((t) => t.address && t.symbol)
+          .map((t) => ({
+            symbol: t.symbol, name: t.name, address: t.address,
+            liquidity: t.liquidity ?? 0, price: t.price ?? 0,
+            priceChange24h: t.price_change_24h_percent ?? 0, logo: t.logo_uri ?? "",
+          }));
+        return Response.json({ items }, { headers: CORS });
+      } catch (e) {
+        return Response.json({ items: [], error: String(e) }, { headers: CORS });
+      }
+    }
     if (p === "/api/products") {
       // defi labels for the aggr client: one "market" per DEX source
       const products = [...new Set([...KNOWN_SOURCES, ...seenSources])].map(srcToPair).sort();
