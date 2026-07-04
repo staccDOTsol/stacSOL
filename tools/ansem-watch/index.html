@@ -1,0 +1,390 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>ANSEM CARNAGE WATCH</title>
+<style>
+  :root {
+    --bg: #0a0a0d;
+    --panel: #111116;
+    --panel2: #16161d;
+    --border: #26262f;
+    --text: #e8e8ee;
+    --dim: #8a8a99;
+    --red: #ff3b4e;
+    --red-dim: #b02531;
+    --green: #2bd576;
+    --green-dim: #1d8f51;
+    --amber: #ffb02e;
+    --mono: "SF Mono", ui-monospace, Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: var(--mono); font-size: 13px;
+    padding: 12px; min-height: 100vh;
+  }
+  a { color: inherit; text-decoration: none; }
+  .grid {
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(12, 1fr);
+    grid-template-rows: auto minmax(220px, 1fr) minmax(220px, 1fr);
+    grid-template-areas:
+      "hdr hdr hdr hdr hdr hdr hdr hdr hdr hdr hdr hdr"
+      "chart chart chart chart chart chart tape tape tape liq liq liq"
+      "flow flow flow holders holders holders winners winners winners losers losers losers";
+    height: calc(100vh - 24px);
+  }
+  @media (max-width: 1100px) {
+    .grid { grid-template-columns: 1fr; grid-template-rows: none; height: auto;
+      grid-template-areas: "hdr" "chart" "tape" "liq" "holders" "flow" "winners" "losers"; }
+    .panel { max-height: 420px; }
+  }
+  .panel {
+    background: var(--panel); border: 1px solid var(--border); border-radius: 8px;
+    padding: 10px; display: flex; flex-direction: column; min-height: 0; overflow: hidden;
+  }
+  .panel h2 {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--dim); margin-bottom: 8px; flex: none;
+    display: flex; justify-content: space-between; align-items: baseline; gap: 8px;
+  }
+  .panel h2 .sub { font-size: 10px; text-transform: none; letter-spacing: 0; white-space: nowrap; }
+  .scroll { overflow-y: auto; min-height: 0; flex: 1; }
+  .scroll::-webkit-scrollbar { width: 4px; }
+  .scroll::-webkit-scrollbar-thumb { background: var(--border); }
+
+  /* header */
+  #hdr { grid-area: hdr; flex-direction: row; align-items: center; gap: 20px; flex-wrap: wrap; padding: 12px 16px; }
+  #hdr .title { font-size: 15px; font-weight: 700; letter-spacing: 0.06em; }
+  #hdr .title .skull { color: var(--red); }
+  #price { font-size: 30px; font-weight: 700; transition: color .15s; }
+  #price.up { color: var(--green); } #price.down { color: var(--red); }
+  .chips { display: flex; gap: 8px; flex-wrap: wrap; }
+  .chip { background: var(--panel2); border: 1px solid var(--border); border-radius: 6px; padding: 4px 8px; text-align: center; }
+  .chip .k { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: .08em; display: block; }
+  .chip .v { font-size: 13px; font-weight: 600; }
+  .pos { color: var(--green); } .neg { color: var(--red); }
+  #status { margin-left: auto; font-size: 10px; color: var(--dim); text-align: right; }
+  #status .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--green); margin-right: 5px; animation: pulse 1.6s infinite; }
+  @keyframes pulse { 50% { opacity: .3; } }
+
+  /* chart */
+  #chart-panel { grid-area: chart; }
+  #chart { width: 100%; flex: 1; min-height: 160px; }
+
+  /* tape */
+  #tape-panel { grid-area: tape; }
+  .trade { display: flex; gap: 8px; padding: 3px 4px; border-bottom: 1px solid #1a1a22; align-items: baseline; }
+  .trade .t { color: var(--dim); font-size: 10px; width: 52px; flex: none; }
+  .trade .side { width: 38px; flex: none; font-weight: 700; }
+  .trade .usd { width: 84px; flex: none; text-align: right; font-weight: 600; }
+  .trade .who { color: var(--dim); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .trade.buy .side, .trade.buy .usd { color: var(--green); }
+  .trade.sell .side, .trade.sell .usd { color: var(--red); }
+  .trade.whale { background: rgba(255,59,78,.09); }
+  .trade.whale.buy { background: rgba(43,213,118,.09); }
+  .trade .badge { font-size: 10px; }
+
+  /* liquidity */
+  #liq-panel { grid-area: liq; }
+  .liq { padding: 5px 6px; border-bottom: 1px solid #1a1a22; border-left: 3px solid transparent; }
+  .liq.add { border-left-color: var(--green-dim); }
+  .liq.remove { border-left-color: var(--red); background: rgba(255,59,78,.07); }
+  .liq .row1 { display: flex; justify-content: space-between; }
+  .liq .kind { font-weight: 700; font-size: 11px; }
+  .liq.add .kind { color: var(--green); } .liq.remove .kind { color: var(--red); }
+  .liq .amt { font-weight: 600; }
+  .liq .row2 { display: flex; justify-content: space-between; color: var(--dim); font-size: 10px; margin-top: 2px; }
+
+  /* holders */
+  #holders-panel { grid-area: holders; }
+  table.hold { width: 100%; border-collapse: collapse; }
+  table.hold td { padding: 3px 4px; border-bottom: 1px solid #1a1a22; white-space: nowrap; font-size: 12px; }
+  table.hold td.rank { color: var(--dim); width: 24px; }
+  table.hold td.pct { text-align: right; color: var(--dim); }
+  table.hold td.delta { text-align: right; font-weight: 600; }
+
+  /* flow + leaderboards */
+  #flow-panel { grid-area: flow; }
+  #winners-panel { grid-area: winners; }
+  #losers-panel { grid-area: losers; }
+  .stat-rows { display: flex; flex-direction: column; gap: 6px; }
+  .stat { display: flex; justify-content: space-between; border-bottom: 1px solid #1a1a22; padding: 4px 2px; }
+  .stat .k { color: var(--dim); }
+  table.lb { width: 100%; border-collapse: collapse; }
+  table.lb td { padding: 4px 4px; border-bottom: 1px solid #1a1a22; white-space: nowrap; }
+  table.lb td.pnl { text-align: right; font-weight: 700; }
+  table.lb td.vol { text-align: right; color: var(--dim); font-size: 11px; }
+  table.lb td.addr a:hover, table.hold td.addr a:hover { text-decoration: underline; }
+  .lp-badge { color: var(--amber); }
+  #alert {
+    position: fixed; top: 0; left: 0; right: 0; padding: 10px; text-align: center;
+    background: var(--red); color: #fff; font-weight: 700; z-index: 10; display: none;
+    letter-spacing: .1em;
+  }
+</style>
+</head>
+<body>
+<div id="alert"></div>
+<div class="grid">
+
+  <div class="panel" id="hdr">
+    <div>
+      <div class="title"><span class="skull">☠</span> $ANSEM CARNAGE WATCH</div>
+      <div style="color:var(--dim);font-size:10px">The Black Bull · 9cRC…pump</div>
+    </div>
+    <div id="price">—</div>
+    <div class="chips" id="chips"></div>
+    <div id="status"><span class="dot"></span><span id="status-text">connecting…</span></div>
+  </div>
+
+  <div class="panel" id="chart-panel">
+    <h2>Price — last 3h (1m candles + live) <span class="sub" id="chart-sub"></span></h2>
+    <canvas id="chart"></canvas>
+  </div>
+
+  <div class="panel" id="tape-panel">
+    <h2>Live tape <span class="sub" id="tape-sub"></span></h2>
+    <div class="scroll" id="tape"></div>
+  </div>
+
+  <div class="panel" id="liq-panel">
+    <h2>Liquidity adds / removes <span class="sub" id="liq-sub"></span></h2>
+    <div class="scroll" id="liq"></div>
+  </div>
+
+  <div class="panel" id="flow-panel">
+    <h2>Flow — all watched history</h2>
+    <div class="stat-rows" id="flow"></div>
+  </div>
+
+  <div class="panel" id="holders-panel">
+    <h2>Top holders <span class="sub">Δ since watch start · 🔻 sold · 💧 LP</span></h2>
+    <div class="scroll"><table class="hold" id="holders"></table></div>
+  </div>
+
+  <div class="panel" id="winners-panel">
+    <h2>Winners — PnL <span class="sub">💧 = touched LP</span></h2>
+    <div class="scroll"><table class="lb" id="winners"></table></div>
+  </div>
+
+  <div class="panel" id="losers-panel">
+    <h2>Losers / bagholders — PnL</h2>
+    <div class="scroll"><table class="lb" id="losers"></table></div>
+  </div>
+
+</div>
+
+<script>
+const $ = (id) => document.getElementById(id);
+const fmtUsd = (v, d) => {
+  const a = Math.abs(v);
+  const s = a >= 1e9 ? (a/1e9).toFixed(2)+"B" : a >= 1e6 ? (a/1e6).toFixed(2)+"M"
+    : a >= 1e3 ? (a/1e3).toFixed(1)+"K" : a.toFixed(d ?? 2);
+  return (v < 0 ? "-$" : "$") + s;
+};
+const fmtTok = (v) => {
+  const a = Math.abs(v);
+  const s = a >= 1e6 ? (a/1e6).toFixed(2)+"M" : a >= 1e3 ? (a/1e3).toFixed(1)+"K" : a.toFixed(0);
+  return (v < 0 ? "-" : "+") + s;
+};
+const short = (a) => a ? a.slice(0,4) + "…" + a.slice(-4) : "?";
+const ts = (u) => new Date(u*1000).toTimeString().slice(0,8);
+const solscan = (a) => `https://solscan.io/account/${a}`;
+
+let price = null, prevPrice = null;
+let candles = [], liveTicks = [];
+let lastMsg = 0, mode = "?";
+
+// ---------- renderers ----------
+function renderOverview(d) {
+  prevPrice = price; price = d.price;
+  const el = $("price");
+  el.textContent = "$" + d.price.toFixed(5);
+  el.className = prevPrice == null ? "" : d.price >= prevPrice ? "up" : "down";
+  const chips = [
+    ["1m", d.priceChange1mPercent], ["5m", d.priceChange5mPercent],
+    ["30m", d.priceChange30mPercent], ["1h", d.priceChange1hPercent],
+    ["24h", d.priceChange24hPercent],
+  ].map(([k, v]) => `<div class="chip"><span class="k">${k}</span><span class="v ${v>=0?"pos":"neg"}">${v>=0?"+":""}${v?.toFixed(1)}%</span></div>`);
+  chips.push(`<div class="chip"><span class="k">mcap</span><span class="v">${fmtUsd(d.marketCap)}</span></div>`);
+  chips.push(`<div class="chip"><span class="k">liquidity</span><span class="v">${fmtUsd(d.liquidity)}</span></div>`);
+  chips.push(`<div class="chip"><span class="k">wallets 30m</span><span class="v">${d.uniqueWallet30m ?? "—"}</span></div>`);
+  $("chips").innerHTML = chips.join("");
+  liveTicks.push({ t: Date.now()/1000, p: d.price });
+  if (liveTicks.length > 600) liveTicks.shift();
+  const al = $("alert");
+  if (d.priceChange5mPercent <= -8) {
+    al.style.display = "block";
+    al.textContent = `⚠ DUMP IN PROGRESS — ${d.priceChange5mPercent.toFixed(1)}% in 5m ⚠`;
+  } else al.style.display = "none";
+  drawChart();
+}
+
+let tapeCount = 0;
+function renderTrade(tr, prepend = true) {
+  // tr: {h,t,o,side,usd,tok,src} (ws) or db row {tx_hash,block_time,owner,side,usd,tok,source}
+  const h = tr.h ?? tr.tx_hash, t = tr.t ?? tr.block_time, o = tr.o ?? tr.owner, src = tr.src ?? tr.source;
+  const buy = tr.side === "buy";
+  const whale = tr.usd >= 5000;
+  const div = document.createElement("div");
+  div.className = `trade ${tr.side}${whale ? " whale" : ""}`;
+  div.innerHTML = `<span class="t">${ts(t)}</span>` +
+    `<span class="side">${buy ? "BUY" : "SELL"}</span>` +
+    `<span class="usd">${fmtUsd(tr.usd)}</span>` +
+    `<span class="who"><a href="${solscan(o)}" target="_blank">${short(o)}</a> · ${(src ?? "").replace(/_/g," ")}</span>` +
+    (whale ? `<span class="badge">🐋</span>` : "");
+  const tape = $("tape");
+  prepend ? tape.prepend(div) : tape.append(div);
+  while (tape.children.length > 150) tape.lastChild.remove();
+  tapeCount++;
+  $("tape-sub").textContent = `${tapeCount} streamed`;
+}
+
+let liqNet = 0;
+function renderLiq(lq, prepend = true) {
+  const t = lq.t ?? lq.block_time, o = lq.o ?? lq.owner, src = lq.src ?? lq.source;
+  const div = document.createElement("div");
+  div.className = `liq ${lq.kind}`;
+  div.innerHTML =
+    `<div class="row1"><span class="kind">${lq.kind === "add" ? "＋ ADD" : "− REMOVE"}</span><span class="amt">${fmtUsd(lq.usd)}</span></div>` +
+    `<div class="row2"><span><a href="${solscan(o)}" target="_blank">${short(o)}</a> · ${(src ?? "").replace(/_/g," ")}</span><span>${ts(t)}</span></div>`;
+  const box = $("liq");
+  prepend ? box.prepend(div) : box.append(div);
+  while (box.children.length > 100) box.lastChild.remove();
+}
+
+function renderBoards(b) {
+  const row = (r) =>
+    `<tr><td class="addr"><a href="${solscan(r.o)}" target="_blank">${short(r.o)}</a>${r.lp ? ' <span class="lp-badge" title="added/removed liquidity">💧</span>' : ""}</td>` +
+    `<td class="vol">${fmtUsd(r.vol)} vol · ${r.n}tx</td>` +
+    `<td class="pnl ${r.pnl >= 0 ? "pos" : "neg"}">${r.pnl >= 0 ? "+" : ""}${fmtUsd(r.pnl)}</td></tr>`;
+  $("winners").innerHTML = b.winners.map(row).join("");
+  $("losers").innerHTML = b.losers.map(row).join("");
+}
+
+function renderFlow(f) {
+  const net = (f.buy_usd ?? 0) - (f.sell_usd ?? 0);
+  const netLiq = (f.added ?? 0) - (f.removed ?? 0);
+  const rows = [
+    ["ingest mode", f.mode === "birdeye-ws" ? "birdeye stream" : "fast poll → ws", ""],
+    ["buy volume", fmtUsd(f.buy_usd ?? 0), "pos"],
+    ["sell volume", fmtUsd(f.sell_usd ?? 0), "neg"],
+    ["net flow", (net >= 0 ? "+" : "") + fmtUsd(net), net >= 0 ? "pos" : "neg"],
+    ["liq added", fmtUsd(f.added ?? 0), "pos"],
+    ["liq removed", fmtUsd(f.removed ?? 0), "neg"],
+    ["net liq", fmtUsd(netLiq), netLiq >= 0 ? "pos" : "neg"],
+    ["biggest single dump", f.dump ? `${fmtUsd(f.dump.usd)} by ${short(f.dump.owner)}` : "—", "neg"],
+    ["trades in db", String(f.trades ?? 0), ""],
+    ["wallets tracked", String(f.wallets ?? 0), ""],
+    ["watching since", f.since ? new Date(f.since * 1000).toLocaleTimeString() : "—", ""],
+  ];
+  $("flow").innerHTML = rows.map(([k, v, c]) => `<div class="stat"><span class="k">${k}</span><span class="${c}">${v}</span></div>`).join("");
+}
+
+function renderHolders(items) {
+  $("holders").innerHTML = items.map((h) =>
+    `<tr><td class="rank">${h.rank}</td>` +
+    `<td class="addr"><a href="${solscan(h.o)}" target="_blank">${short(h.o)}</a>` +
+      `${h.selling ? " 🔻" : ""}${h.lp ? ' <span class="lp-badge">💧</span>' : ""}</td>` +
+    `<td class="pct">${h.pct.toFixed(2)}%</td>` +
+    `<td class="delta ${h.delta >= 0 ? "pos" : "neg"}" title="tokens vs first snapshot">${h.delta === 0 ? "·" : fmtTok(h.delta)}</td></tr>`,
+  ).join("");
+}
+
+function drawChart() {
+  const cv = $("chart"), ctx = cv.getContext("2d");
+  const W = (cv.width = cv.clientWidth * devicePixelRatio);
+  const H = (cv.height = cv.clientHeight * devicePixelRatio);
+  ctx.clearRect(0, 0, W, H);
+  if (!candles.length) return;
+  const all = candles.flatMap((c) => [c.h, c.l]).concat(liveTicks.map((t) => t.p));
+  const min = Math.min(...all), max = Math.max(...all);
+  const pad = (max - min) * 0.08 || max * 0.01;
+  const y = (v) => H - ((v - (min - pad)) / (max - min + 2 * pad)) * H;
+  const n = candles.length;
+  const cw = W / (n + 8);
+  candles.forEach((c, i) => {
+    const x = i * cw + cw / 2;
+    const up = c.c >= c.o;
+    ctx.strokeStyle = ctx.fillStyle = up ? "#2bd576" : "#ff3b4e";
+    ctx.lineWidth = Math.max(1, cw * 0.12);
+    ctx.beginPath(); ctx.moveTo(x, y(c.h)); ctx.lineTo(x, y(c.l)); ctx.stroke();
+    const bw = Math.max(2, cw * 0.6);
+    ctx.fillRect(x - bw / 2, Math.min(y(c.o), y(c.c)), bw, Math.max(2, Math.abs(y(c.o) - y(c.c))));
+  });
+  if (liveTicks.length > 1) {
+    ctx.strokeStyle = "#ffb02e"; ctx.lineWidth = 2;
+    ctx.beginPath();
+    const t0 = candles[0].t, span = (candles[n - 1].t - t0) || 1;
+    liveTicks.forEach((tk, i) => {
+      const x = ((tk.t - t0) / span) * (n * cw);
+      i ? ctx.lineTo(x, y(tk.p)) : ctx.moveTo(x, y(tk.p));
+    });
+    ctx.stroke();
+  }
+  ctx.fillStyle = "#8a8a99"; ctx.font = `${11 * devicePixelRatio}px monospace`;
+  ctx.fillText(`hi $${max.toFixed(4)}  lo $${min.toFixed(4)}`, 8 * devicePixelRatio, 14 * devicePixelRatio);
+  const first = candles[0].o, chg = ((price ?? candles[n-1].c) - first) / first * 100;
+  $("chart-sub").textContent = `3h: ${chg >= 0 ? "+" : ""}${chg.toFixed(1)}%`;
+  $("chart-sub").style.color = chg >= 0 ? "var(--green)" : "var(--red)";
+}
+
+// ---------- data plumbing ----------
+async function j(u) { const r = await fetch(u); if (!r.ok) throw new Error(u + " " + r.status); return r.json(); }
+
+async function bootstrap() {
+  const b = await j("/api/bootstrap");
+  mode = b.mode;
+  if (b.overview) renderOverview(b.overview);
+  $("tape").innerHTML = ""; tapeCount = 0;
+  (b.trades ?? []).forEach((t) => renderTrade(t, false));   // already newest-first
+  tapeCount = b.flow?.trades ?? tapeCount;
+  $("liq").innerHTML = "";
+  (b.liq ?? []).forEach((l) => renderLiq(l, false));
+  if (b.boards) renderBoards(b.boards);
+  if (b.flow) renderFlow(b.flow);
+  if (b.holders?.length) renderHolders(b.holders);
+  lastMsg = Date.now();
+}
+
+async function pollCandles() {
+  try {
+    const items = (await j("/api/candles")).data.items || [];
+    candles = items.map((c) => ({ t: c.unixTime, o: c.o, h: c.h, l: c.l, c: c.c }));
+    drawChart();
+  } catch (e) { console.error(e); }
+}
+
+function connectWS() {
+  const ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+  ws.onmessage = (e) => {
+    lastMsg = Date.now();
+    const m = JSON.parse(e.data);
+    if (m.type === "trade") { renderTrade(m.data); }
+    else if (m.type === "liq") { renderLiq(m.data); }
+    else if (m.type === "overview") { renderOverview(m.data); }
+    else if (m.type === "stats") { renderBoards(m.data.boards); renderFlow(m.data.flow); }
+    else if (m.type === "holders") { renderHolders(m.data); }
+  };
+  ws.onclose = () => setTimeout(connectWS, 2500);
+  ws.onerror = () => ws.close();
+}
+
+function heartbeat() {
+  const age = (Date.now() - lastMsg) / 1000;
+  $("status-text").textContent = age < 12 ? `LIVE · ws · ${mode === "birdeye-ws" ? "birdeye stream" : "fast poll"}` : `stale ${Math.floor(age)}s`;
+  document.querySelector("#status .dot").style.background = age < 12 ? "var(--green)" : "var(--red)";
+}
+
+bootstrap();
+pollCandles();
+connectWS();
+setInterval(pollCandles, 60000);
+setInterval(heartbeat, 2000);
+window.addEventListener("resize", drawChart);
+</script>
+</body>
+</html>

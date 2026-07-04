@@ -1,0 +1,3 @@
+ansem-aggr/*
+!ansem-aggr/dist
+ansem-watch/*.db*

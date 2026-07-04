@@ -34,9 +34,16 @@ dist-ssr
 .env.*
 !.env.example
 
+# token-watch local dbs
+tools/ansem-watch/*.db*
+
+# ansem-aggr: vendored clone of Tucsky/aggr (has its own git)
+tools/ansem-aggr/
+
 # Wallet keypairs / authority secrets — never commit these.
 keys/
 *.keypair.json
 *-keypair.json
 secret*.json
 .env*.local
+.env*
