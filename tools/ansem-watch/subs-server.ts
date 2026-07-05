@@ -12,10 +12,10 @@ import { initBurn, burnStatus, buyAndBurn } from "./burn";
 const PORT = Number(process.env.SUBS_PORT || 4478);
 
 // combined status: any active model unlocks the terminal
-function combinedStatus(wallet: string) {
+async function combinedStatus(wallet: string) {
   const pass = passStatus(wallet);
   if (pass.subscribed) return pass;
-  const stream = streamStatus(wallet);
+  const stream = await streamStatus(wallet);
   if (stream.subscribed) return stream;
   return { ...pass, stream: streamInfo().enabled };
 }
@@ -53,7 +53,7 @@ Bun.serve({
       const w = url.searchParams.get("wallet") ?? "";
       if (!w) return Response.json({ enabled: true, subscribed: false }, { headers: CORS });
       try {
-        return Response.json(combinedStatus(w), { headers: CORS });
+        return Response.json(await combinedStatus(w), { headers: CORS });
       } catch (e) {
         return Response.json({ enabled: true, subscribed: false, error: String(e) }, { headers: CORS });
       }
@@ -97,7 +97,7 @@ Bun.serve({
         streamSeen(w); // keep streamers marked active for the pull loop
         const st = meter(w);
         if (st.subscribed) return Response.json(st, { headers: CORS });
-        return Response.json(streamStatus(w), { headers: CORS });
+        return Response.json(await streamStatus(w), { headers: CORS });
       } catch (e) {
         return Response.json({ error: String(e) }, { status: 422, headers: CORS });
       }

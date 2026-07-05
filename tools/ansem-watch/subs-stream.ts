@@ -37,6 +37,7 @@ import { getTransferSolInstruction } from "@solana-program/system";
 import {
   findRecurringDelegationPda,
   fetchMaybeRecurringDelegation,
+  fetchDelegationsByDelegator,
   fetchMaybeSubscriptionAuthorityFromSeeds,
   getInitSubscriptionAuthorityOverlayInstructionAsync,
   getCreateRecurringDelegationOverlayInstructionAsync,
@@ -99,8 +100,39 @@ export function streamInfo() {
   };
 }
 
-export function streamStatus(wallet: string) {
+/**
+ * On-chain authoritative: a wallet is "streaming" iff it holds a live recurring
+ * delegation to our puller — true regardless of local DB (survives redeploys,
+ * confirm hiccups, cache wipes). Caches the result so the pull loop can find it.
+ */
+export async function streamStatus(wallet: string) {
   const now = Math.floor(Date.now() / 1000);
+  if (!puller) return { enabled: false, subscribed: false, mode: null, secondsLeft: 0, expires: 0 };
+
+  try {
+    const dels: any[] = await fetchDelegationsByDelegator(rpc, address(wallet));
+    let best: any = null;
+    for (const d of dels) {
+      if (d.kind !== "recurring") continue;
+      if (String(d.data.header.delegatee) !== String(puller.address)) continue;
+      if (String(d.data.mint) !== String(WSOL)) continue;
+      const exp = Number(d.data.expiryTs ?? 0n);
+      if (exp !== 0 && exp <= now) continue;
+      if (!best || Number(d.data.expiryTs) > Number(best.data.expiryTs)) best = d;
+    }
+    if (best) {
+      const exp = Number(best.data.expiryTs ?? 0n);
+      const row = db.query("SELECT last_seen, last_pull FROM streams WHERE wallet = ?").get(wallet) as any;
+      db.run(
+        "INSERT INTO streams VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(wallet) DO UPDATE SET delegation_pda=excluded.delegation_pda, expiry=excluded.expiry, updated=excluded.updated",
+        [wallet, 0, String(best.address), exp || now + 365 * 86400, row?.last_seen ?? 0, row?.last_pull ?? 0, now],
+      );
+      return { enabled: true, subscribed: true, mode: "stream", secondsLeft: exp === 0 ? 999999 : exp - now, expires: exp };
+    }
+  } catch (e) {
+    // RPC hiccup — fall back to the local cache below
+  }
+
   const row = db.query("SELECT * FROM streams WHERE wallet = ?").get(wallet) as any;
   const active = !!row && row.expiry > now;
   return {
@@ -160,17 +192,17 @@ export async function buildStreamTx(wallet: string, hours: number) {
   const auth: any = await fetchMaybeSubscriptionAuthorityFromSeeds(rpc, { user: subscriber, tokenMint: WSOL }).catch(() => ({ exists: false }));
 
   if (!auth.exists) {
-    // step 1: wrap funds + create the authority
+    // step 1: just create the authority (needs the wSOL ATA to exist).
+    // Funds are wrapped in step 2 so we never double-wrap / double-charge.
     const ixs = [
       await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: noop, mint: WSOL, owner: subscriber }),
-      getTransferSolInstruction({ source: noop, destination: userAta, amount: fund }),
-      getSyncNativeInstruction({ account: userAta }),
       await getInitSubscriptionAuthorityOverlayInstructionAsync({ owner: noop, tokenMint: WSOL, tokenProgram: TOKEN_PROGRAM_ADDRESS, userAta }),
     ];
     return { step: "init", tx: await wireTx(subscriber, ixs), hours: h };
   }
 
-  // step 2 (or the only step for returning viewers): the recurring delegation
+  // step 2 (or the only step for returning viewers): wrap funds + create the
+  // recurring delegation. The wrap tops up the delegator's wSOL that pulls draw from.
   const nonce = now;
   const ixs = [
     await getCreateAssociatedTokenIdempotentInstructionAsync({ payer: noop, mint: WSOL, owner: subscriber }),
@@ -195,31 +227,40 @@ export async function buildStreamTx(wallet: string, hours: number) {
   return { step: "delegate", tx: await wireTx(subscriber, ixs), nonce, hours: h, delegationPda: delegationPda ?? null };
 }
 
-/** verify the authorization landed and grant access until the delegation expiry */
+/**
+ * Grant access once the recurring delegation actually exists on-chain — the
+ * true source of truth. Returns { pending: true } (HTTP 200) while it's still
+ * settling so the client polls without 422 spam; the tx signature is a hint,
+ * not required. Only truly bad input throws (→ 422).
+ */
 export async function confirmStream(wallet: string, nonce: number, hours: number, signature: string) {
   if (!puller) throw new Error("streaming disabled");
-  if (!signature) throw new Error("no signature");
-  let tx: any = null;
-  for (let i = 0; i < 30; i++) {
-    tx = await rpc.getTransaction(signature as any, { maxSupportedTransactionVersion: 0, encoding: "json", commitment: "confirmed" }).send().catch(() => null);
-    if (tx) break;
-    await new Promise((r) => setTimeout(r, 2000));
+  if (!nonce) throw new Error("missing nonce");
+
+  const subscriber = address(wallet);
+  const auth = await fetchMaybeSubscriptionAuthorityFromSeeds(rpc, { user: subscriber, tokenMint: WSOL }).catch(() => null) as any;
+  if (!auth?.address) {
+    return { enabled: true, subscribed: false, pending: true }; // authority not visible yet
   }
-  if (!tx) throw new Error("transaction not found / not confirmed yet");
-  if (tx.meta?.err) throw new Error("authorization failed on-chain");
+  const [pda] = await findRecurringDelegationPda({
+    subscriptionAuthority: auth.address, delegator: subscriber, delegatee: puller.address, nonce: BigInt(nonce),
+  }).catch(() => [null]);
+  if (!pda) return { enabled: true, subscribed: false, pending: true };
 
-  const now = Math.floor(Date.now() / 1000);
-  const h = Math.max(1, Math.min(720, Math.floor(hours)));
-  const auth = await fetchMaybeSubscriptionAuthorityFromSeeds(rpc, { user: address(wallet), tokenMint: WSOL }).catch(() => null) as any;
-  const [pda] = auth?.address
-    ? await findRecurringDelegationPda({ subscriptionAuthority: auth.address, delegator: address(wallet), delegatee: puller.address, nonce: BigInt(nonce) }).catch(() => [null])
-    : [null];
-
-  db.run(
-    "INSERT INTO streams VALUES (?, ?, ?, ?, ?, 0, ?) ON CONFLICT(wallet) DO UPDATE SET nonce=excluded.nonce, delegation_pda=excluded.delegation_pda, expiry=excluded.expiry, last_seen=excluded.last_seen, updated=excluded.updated",
-    [wallet, nonce, pda ?? "", now + h * 3600, now, now],
-  );
-  return streamStatus(wallet);
+  const del = await fetchMaybeRecurringDelegation(rpc, pda).catch(() => null) as any;
+  if (!del?.exists) {
+    // if the signature is known-failed, surface it; otherwise keep polling
+    if (signature) {
+      const tx: any = await rpc.getTransaction(signature as any, { maxSupportedTransactionVersion: 0, encoding: "json", commitment: "confirmed" }).send().catch(() => null);
+      if (tx?.meta?.err) {
+        console.log(`[stream] authorization tx failed on-chain for ${wallet.slice(0, 8)}: ${JSON.stringify(tx.meta.err).slice(0, 120)}`);
+        throw new Error("authorization transaction failed on-chain — check your balance and try again");
+      }
+    }
+    return { enabled: true, subscribed: false, pending: true };
+  }
+  console.log(`[stream] ✅ delegation active for ${wallet.slice(0, 8)}`);
+  return await streamStatus(wallet); // on-chain authoritative, also caches it
 }
 
 /** background pull loop: one micropayment per active streamer per 60s period */
