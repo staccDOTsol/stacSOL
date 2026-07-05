@@ -1,8 +1,8 @@
-// Billing sidecar: prepaid access passes (upfront SOL transfer), isolated from
-// the ingest relay. The relay proxies /api/sub/*, /paywall.js and /plan.json here.
+// Billing sidecar: flat passes + pay-as-you-go metering. Isolated from the
+// ingest relay; the relay proxies /api/sub/*, /paywall.js and /plan.json here.
 // Run: bun run tools/ansem-watch/subs-server.ts
 
-import { subsInfo, passStatus, buildPassTx, confirmPass } from "./subs";
+import { subsInfo, passStatus, buildPayTx, confirmPay, meter } from "./subs";
 
 const PORT = Number(process.env.SUBS_PORT || 4478);
 const CORS = {
@@ -25,7 +25,7 @@ Bun.serve({
     }
     if (p === "/plan.json") {
       return Response.json(
-        { name: "Carnage Terminal", description: "Day pass 1 SOL / Month pass 18 SOL, paid upfront on-chain." },
+        { name: "Carnage Terminal", description: "Pay-as-you-go (0.05 SOL/hr, metered while open) or Day 1 / Month 18 flat passes." },
         { headers: CORS },
       );
     }
@@ -44,7 +44,7 @@ Bun.serve({
     if (p === "/api/sub/tx" && req.method === "POST") {
       try {
         const b = await req.json();
-        return Response.json(await buildPassTx(String(b.wallet), String(b.tier || "day")), { headers: CORS });
+        return Response.json(await buildPayTx(String(b.wallet), String(b.kind || b.tier || "day"), b.lamports), { headers: CORS });
       } catch (e) {
         return Response.json({ error: String(e) }, { status: 422, headers: CORS });
       }
@@ -52,7 +52,15 @@ Bun.serve({
     if (p === "/api/sub/confirm" && req.method === "POST") {
       try {
         const b = await req.json();
-        return Response.json(await confirmPass(String(b.wallet), String(b.tier || "day"), String(b.signature || "")), { headers: CORS });
+        return Response.json(await confirmPay(String(b.wallet), String(b.kind || b.tier || "day"), String(b.signature || "")), { headers: CORS });
+      } catch (e) {
+        return Response.json({ error: String(e) }, { status: 422, headers: CORS });
+      }
+    }
+    if (p === "/api/sub/meter" && req.method === "POST") {
+      try {
+        const b = await req.json();
+        return Response.json(meter(String(b.wallet)), { headers: CORS });
       } catch (e) {
         return Response.json({ error: String(e) }, { status: 422, headers: CORS });
       }
@@ -61,4 +69,4 @@ Bun.serve({
   },
 });
 
-console.log(`subs sidecar up on http://localhost:${PORT} (prepaid passes)`);
+console.log(`subs sidecar up on http://localhost:${PORT} (passes + pay-as-you-go)`);
