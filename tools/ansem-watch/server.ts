@@ -353,6 +353,18 @@ const server = Bun.serve({
   async fetch(req, srv) {
     const url = new URL(req.url);
     const p = url.pathname;
+    // CORS preflight for cross-origin POSTs (e.g. dev app on :4488 → relay :4477)
+    if (req.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: {
+          "access-control-allow-origin": "*",
+          "access-control-allow-methods": "GET, POST, OPTIONS",
+          "access-control-allow-headers": "content-type",
+          "access-control-max-age": "86400",
+        },
+      });
+    }
     if (p === "/ws") {
       const tag = `${req.headers.get("origin") ?? "no-origin"} ${req.headers.get("user-agent")?.slice(0, 40) ?? ""}`;
       if (srv.upgrade(req, { data: { tag } })) return undefined as any;
@@ -438,7 +450,9 @@ const server = Bun.serve({
           .filter((t) => t.address && t.symbol)
           .map((t) => ({
             symbol: t.symbol, name: t.name, address: t.address,
+            mcap: t.market_cap ?? t.fdv ?? 0,
             liquidity: t.liquidity ?? 0, price: t.price ?? 0,
+            volume24h: t.volume_24h_usd ?? 0,
             priceChange24h: t.price_change_24h_percent ?? 0, logo: t.logo_uri ?? "",
           }));
         return Response.json({ items }, { headers: CORS });

@@ -28,7 +28,120 @@
   var choice = { kind: "payg", lamports: 250000000 }; // default 0.25 SOL PAYG
 
   function j(u, opts) { return fetch(u, opts).then(function (r) { return r.json(); }); }
-  function provider() { return (window.phantom && window.phantom.solana) || window.solana || null; }
+
+  var wa = null; // chosen wallet adapter
+
+  function bs58(bytes) {
+    var A = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+    var d = [0], i, k, c;
+    for (i = 0; i < bytes.length; i++) {
+      c = bytes[i];
+      for (k = 0; k < d.length; k++) { c += d[k] << 8; d[k] = c % 58; c = (c / 58) | 0; }
+      while (c) { d.push(c % 58); c = (c / 58) | 0; }
+    }
+    var s = "";
+    for (i = 0; i < bytes.length && bytes[i] === 0; i++) s += "1";
+    for (i = d.length - 1; i >= 0; i--) s += A[d[i]];
+    return s;
+  }
+  function sigStr(sig) {
+    if (typeof sig === "string") return sig;
+    if (sig && sig.signature) return sigStr(sig.signature);
+    if (sig instanceof Uint8Array) return bs58(sig);
+    if (sig && sig.length != null) return bs58(new Uint8Array(sig));
+    return String(sig);
+  }
+
+  // --- Wallet Standard discovery (Phantom / Solflare / Backpack / Jupiter / …)
+  var standardWallets = [];
+  (function discover() {
+    function register() {
+      for (var i = 0; i < arguments.length; i++) {
+        var w = arguments[i];
+        if (w && w.features && w.features["standard:connect"] &&
+            (w.features["solana:signAndSendTransaction"] || w.features["solana:signTransaction"]) &&
+            (!w.chains || w.chains.some(function (c) { return String(c).indexOf("solana") === 0; }))) {
+          if (standardWallets.indexOf(w) === -1) standardWallets.push(w);
+        }
+      }
+      return function () {};
+    }
+    try {
+      window.addEventListener("wallet-standard:register-wallet", function (e) { e.detail({ register: register }); });
+      window.dispatchEvent(new CustomEvent("wallet-standard:app-ready", { detail: { register: register } }));
+    } catch (e) {}
+  })();
+
+  // uniform adapter over both Wallet-Standard and injected (window.solana) wallets
+  function standardAdapter(w) {
+    var account = null;
+    return {
+      name: w.name, icon: w.icon,
+      connect: function () {
+        return w.features["standard:connect"].connect().then(function (res) {
+          account = (res.accounts && res.accounts[0]) || w.accounts[0];
+          return account.address;
+        });
+      },
+      signAndSend: function (tx) {
+        var f = w.features["solana:signAndSendTransaction"];
+        if (f) {
+          return f.signAndSendTransaction({ account: account, transaction: tx.serialize(), chain: "solana:mainnet" })
+            .then(function (out) { return sigStr(out[0].signature); });
+        }
+        // sign-only wallet: sign then send via provider fallback isn't available → reject
+        return Promise.reject(new Error(w.name + " can't send transactions"));
+      }
+    };
+  }
+  function injectedAdapter(name, icon, p) {
+    return {
+      name: name, icon: icon,
+      connect: function () { return p.connect().then(function (r) { return ((r && r.publicKey) || p.publicKey).toString(); }); },
+      signAndSend: function (tx) { return p.signAndSendTransaction(tx).then(function (s) { return sigStr(s); }); }
+    };
+  }
+  function discoverAdapters() {
+    var list = standardWallets.map(standardAdapter);
+    var names = list.map(function (a) { return (a.name || "").toLowerCase(); });
+    // injected fallbacks for wallets that predate the standard
+    if (window.phantom && window.phantom.solana && names.indexOf("phantom") === -1)
+      list.push(injectedAdapter("Phantom", "", window.phantom.solana));
+    if (window.solflare && names.indexOf("solflare") === -1)
+      list.push(injectedAdapter("Solflare", "", window.solflare));
+    if (!list.length && window.solana)
+      list.push(injectedAdapter(window.solana.isPhantom ? "Phantom" : "Wallet", "", window.solana));
+    return list;
+  }
+
+  // wallet picker modal → resolves to a chosen adapter
+  function pickWallet() {
+    var adapters = discoverAdapters();
+    if (adapters.length === 1) return Promise.resolve(adapters[0]);
+    if (!adapters.length) return Promise.reject(new Error("no Solana wallet found — install Phantom, Solflare, Jupiter…"));
+    return new Promise(function (resolve, reject) {
+      var m = document.createElement("div");
+      m.id = "cwp-wallets";
+      m.style.cssText = "position:fixed;inset:0;z-index:2147483647;background:rgba(8,8,12,.85);backdrop-filter:blur(10px);display:flex;align-items:center;justify-content:center;font-family:'SF Mono',ui-monospace,Menlo,monospace;color:#e8e8ee";
+      m.innerHTML = '<div style="background:#111116;border:1px solid #26262f;border-radius:12px;padding:22px;max-width:340px;width:90%">' +
+        '<div style="font-size:14px;font-weight:700;letter-spacing:.05em;margin-bottom:14px;text-align:center">connect a wallet</div>' +
+        '<div id="cwp-wl"></div>' +
+        '<div style="text-align:center;margin-top:12px"><a href="javascript:void(0)" id="cwp-wlx" style="color:#8a8a99;font-size:11px">cancel</a></div></div>';
+      document.documentElement.appendChild(m);
+      var wl = m.querySelector("#cwp-wl");
+      adapters.forEach(function (a) {
+        var row = document.createElement("button");
+        row.style.cssText = "display:flex;align-items:center;gap:10px;width:100%;background:#16161d;border:1px solid #26262f;border-radius:9px;padding:11px 13px;margin-bottom:8px;color:#e8e8ee;font:inherit;cursor:pointer";
+        row.innerHTML = (a.icon ? '<img src="' + a.icon + '" width="22" height="22" style="border-radius:5px"/>' : '<span style="width:22px">👛</span>') +
+          '<span style="font-weight:600">' + a.name + '</span>';
+        row.onmouseover = function () { row.style.borderColor = "#2bd576"; };
+        row.onmouseout = function () { row.style.borderColor = "#26262f"; };
+        row.onclick = function () { m.remove(); resolve(a); };
+        wl.appendChild(row);
+      });
+      m.querySelector("#cwp-wlx").onclick = function () { m.remove(); reject(new Error("cancelled")); };
+    });
+  }
   function loadWeb3() {
     return new Promise(function (res, rej) {
       if (window.solanaWeb3) return res(window.solanaWeb3);
@@ -132,7 +245,7 @@
       '</div>' +
       '<div id="cwp-opts"></div>' +
       '<div id="cwp-sub"></div>' +
-      '<button id="cwp-go">connect phantom &amp; pay</button>' +
+      '<button id="cwp-go">connect wallet &amp; pay</button>' +
       '<div id="cwp-msg"></div>' +
       '<div id="cwp-fine">one upfront transfer · verified on-chain<br/>pay-as-you-go burns only while this tab is open, at ' + rate + ' SOL/hr</div>' +
       '</div>';
@@ -185,12 +298,14 @@
     overlay.querySelector("#cwp-go").onclick = function () {
       var btn = this;
       btn.disabled = true;
-      var ph = provider();
-      if (!ph) { setMsg("phantom not found — install it or open in a wallet browser", true); btn.disabled = false; return; }
       var sel = choice;
-      setMsg("connecting wallet…");
-      ph.connect().then(function (res) {
-        wallet = (res.publicKey || ph.publicKey).toString();
+      setMsg("choose a wallet…");
+      pickWallet().then(function (adapter) {
+        wa = adapter;
+        setMsg("connecting " + adapter.name + "…");
+        return wa.connect();
+      }).then(function (pubkey) {
+        wallet = pubkey;
         localStorage.setItem(LSK_WALLET, wallet);
         return checkStatus();
       }).then(function (already) {
@@ -218,9 +333,9 @@
     setMsg(label);
     return loadWeb3().then(function (w3) {
       var tx = w3.VersionedTransaction.deserialize(b64ToBytes(txB64));
-      return provider().signAndSendTransaction(tx);
+      return wa.signAndSend(tx);
     }).then(function (sig) {
-      var signature = String(sig.signature || sig);
+      var signature = sigStr(sig);
       setMsg("confirming " + signature.slice(0, 8) + "…");
       return signature;
     });
