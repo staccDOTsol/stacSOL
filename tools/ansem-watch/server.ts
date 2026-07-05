@@ -392,7 +392,7 @@ const server = Bun.serve({
       console.log(`[debug] ${url.search}`);
       return new Response("ok", { headers: CORS });
     }
-    if (p.startsWith("/api/sub/") || p === "/paywall.js" || p === "/plan.json") {
+    if (p.startsWith("/api/sub/") || p.startsWith("/api/burn/") || p === "/paywall.js" || p === "/plan.json") {
       try {
         const r = await fetch(SUBS_URL + p + url.search, {
           method: req.method,

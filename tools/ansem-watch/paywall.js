@@ -82,7 +82,9 @@
     }
     badge.innerHTML = mode === "credit"
       ? '<span style="color:#2bd576">⛽</span> ' + fmtLeft(secondsLeft) + ' left'
-      : '<span style="color:#2bd576">✓</span> pass · ' + fmtLeft(secondsLeft);
+      : mode === "stream"
+        ? '<span style="color:#2bd576">🌊</span> streaming · ' + fmtLeft(secondsLeft)
+        : '<span style="color:#2bd576">✓</span> pass · ' + fmtLeft(secondsLeft);
   }
 
   function tierCard(id, big, unit, tag, sel) {
@@ -120,10 +122,12 @@
       '#cwp-fine{font-size:10px;color:#55555f;margin-top:8px;line-height:1.5}' +
       '</style>' +
       '<div id="cwp-card">' +
-      '<h1><span class="skull">☠</span> CARNAGE COSTS</h1>' +
+      '<h1><span class="skull">☠</span> aggr.sh</h1>' +
       '<div style="color:#8a8a99;font-size:12px">5 free minutes are up. Only pay for the time you watch.</div>' +
+      '<div style="color:#ffb02e;font-size:10px;margin-top:4px">🔥 all fees buy &amp; burn $BUCKINGHAM</div>' +
       '<div class="cwp-seg" id="cwp-seg">' +
-      '<button data-m="payg" class="on">⛽ pay as you go</button>' +
+      (info && info.stream && info.stream.enabled ? '<button data-m="stream" class="on">🌊 stream</button>' : '') +
+      '<button data-m="payg"' + (info && info.stream && info.stream.enabled ? '' : ' class="on"') + '>⛽ prepay</button>' +
       '<button data-m="flat">flat pass</button>' +
       '</div>' +
       '<div id="cwp-opts"></div>' +
@@ -134,11 +138,18 @@
       '</div>';
     document.documentElement.appendChild(overlay);
 
-    var seg = "payg";
+    var streamOn = info && info.stream && info.stream.enabled;
+    var seg = streamOn ? "stream" : "payg";
     function renderOpts() {
       var box = overlay.querySelector("#cwp-opts");
       var sub = overlay.querySelector("#cwp-sub");
-      if (seg === "payg") {
+      if (seg === "stream") {
+        box.innerHTML = [6, 24, 72].map(function (hrs, i) {
+          return tierCard("stream:" + hrs, hrs + "h", "window", "~" + (rate * hrs).toFixed(hrs * rate < 1 ? 2 : 1) + " SOL", i === 0);
+        }).join("");
+        choice = { kind: "stream", hours: 6 };
+        sub.textContent = "authorize once — funds stay in YOUR wallet, pulled 0.05/hr per minute watched, revoke any time";
+      } else if (seg === "payg") {
         box.innerHTML = presets.map(function (sol, i) {
           var hrs = sol / rate;
           return tierCard("payg:" + Math.round(sol * 1e9), sol, "SOL", "~" + (hrs >= 1 ? hrs.toFixed(0) + "h" : Math.round(hrs * 60) + "m"), i === 1);
@@ -156,6 +167,7 @@
           el.classList.add("sel");
           var k = el.dataset.kind;
           if (k.indexOf("payg:") === 0) choice = { kind: "payg", lamports: +k.split(":")[1] };
+          else if (k.indexOf("stream:") === 0) choice = { kind: "stream", hours: +k.split(":")[1] };
           else choice = { kind: k };
         };
       });
@@ -183,36 +195,8 @@
         return checkStatus();
       }).then(function (already) {
         if (already) return "done";
-        setMsg("building payment…");
-        return j(RELAY + "/api/sub/tx", {
-          method: "POST", headers: { "content-type": "application/json" },
-          body: JSON.stringify({ wallet: wallet, kind: sel.kind, lamports: sel.lamports }),
-        }).then(function (out) {
-          if (!out || out.error) throw new Error((out && out.error) || "tx build failed");
-          var sol = (Number(out.lamports) / 1e9).toFixed(2);
-          setMsg("approve " + sol + " SOL in your wallet…");
-          return loadWeb3().then(function (w3) {
-            var tx = w3.VersionedTransaction.deserialize(b64ToBytes(out.tx));
-            return provider().signAndSendTransaction(tx);
-          }).then(function (sig) {
-            var signature = sig.signature || sig;
-            setMsg("confirming " + String(signature).slice(0, 8) + "…");
-            return new Promise(function (resolve) {
-              var tries = 0;
-              (function poll() {
-                j(RELAY + "/api/sub/confirm", {
-                  method: "POST", headers: { "content-type": "application/json" },
-                  body: JSON.stringify({ wallet: wallet, kind: sel.kind, signature: String(signature) }),
-                }).then(function (st) {
-                  if (st.subscribed) { applyStatus(st); return resolve("done"); }
-                  if (st.error && !/not found|not confirmed/.test(st.error)) setMsg(st.error, true);
-                  if (++tries > 45) return resolve("timeout");
-                  setTimeout(poll, 2000);
-                }).catch(function () { setTimeout(poll, 2000); });
-              })();
-            });
-          });
-        });
+        if (sel.kind === "stream") return runStream(sel.hours);
+        return runPayment(sel);
       }).then(function (r) {
         if (r === "done") {
           subscribed = true;
@@ -227,6 +211,82 @@
         btn.disabled = false;
       });
     };
+  }
+
+  // sign a base64 tx and wait for on-chain confirmation
+  function signAndWait(txB64, label) {
+    setMsg(label);
+    return loadWeb3().then(function (w3) {
+      var tx = w3.VersionedTransaction.deserialize(b64ToBytes(txB64));
+      return provider().signAndSendTransaction(tx);
+    }).then(function (sig) {
+      var signature = String(sig.signature || sig);
+      setMsg("confirming " + signature.slice(0, 8) + "…");
+      return signature;
+    });
+  }
+
+  // flat pass / prepay: one transfer, then confirm
+  function runPayment(sel) {
+    return j(RELAY + "/api/sub/tx", {
+      method: "POST", headers: { "content-type": "application/json" },
+      body: JSON.stringify({ wallet: wallet, kind: sel.kind, lamports: sel.lamports }),
+    }).then(function (out) {
+      if (!out || out.error) throw new Error((out && out.error) || "tx build failed");
+      return signAndWait(out.tx, "approve " + (Number(out.lamports) / 1e9).toFixed(2) + " SOL in your wallet…").then(function (signature) {
+        return new Promise(function (resolve) {
+          var tries = 0;
+          (function poll() {
+            j(RELAY + "/api/sub/confirm", {
+              method: "POST", headers: { "content-type": "application/json" },
+              body: JSON.stringify({ wallet: wallet, kind: sel.kind, signature: signature }),
+            }).then(function (st) {
+              if (st.subscribed) { applyStatus(st); return resolve("done"); }
+              if (st.error && !/not found|not confirmed/.test(st.error)) setMsg(st.error, true);
+              if (++tries > 45) return resolve("timeout");
+              setTimeout(poll, 2000);
+            }).catch(function () { setTimeout(poll, 2000); });
+          })();
+        });
+      });
+    });
+  }
+
+  // streaming: authorize once (2 sigs for first-timers: init authority, then
+  // the recurring delegation). Funds stay in your wallet; pulled per minute.
+  function runStream(hours) {
+    function step() {
+      return j(RELAY + "/api/sub/stream/tx", {
+        method: "POST", headers: { "content-type": "application/json" },
+        body: JSON.stringify({ wallet: wallet, hours: hours }),
+      }).then(function (out) {
+        if (!out || out.error) throw new Error((out && out.error) || "authorization build failed");
+        if (out.step === "init") {
+          return signAndWait(out.tx, "approve setup (1/2) in your wallet…").then(function () {
+            setMsg("setup confirmed — approve the stream authorization…");
+            return new Promise(function (r) { setTimeout(r, 4000); }).then(step); // let authority finalize, then delegate
+          });
+        }
+        // delegate step
+        return signAndWait(out.tx, "approve the stream authorization in your wallet…").then(function (signature) {
+          return new Promise(function (resolve) {
+            var tries = 0;
+            (function poll() {
+              j(RELAY + "/api/sub/stream/confirm", {
+                method: "POST", headers: { "content-type": "application/json" },
+                body: JSON.stringify({ wallet: wallet, hours: hours, nonce: out.nonce, signature: signature }),
+              }).then(function (st) {
+                if (st.subscribed) { applyStatus(st); return resolve("done"); }
+                if (st.error && !/not found|not confirmed/.test(st.error)) setMsg(st.error, true);
+                if (++tries > 45) return resolve("timeout");
+                setTimeout(poll, 2000);
+              }).catch(function () { setTimeout(poll, 2000); });
+            })();
+          });
+        });
+      });
+    }
+    return step();
   }
 
   function hideOverlay() { if (overlay) { overlay.remove(); overlay = null; } }

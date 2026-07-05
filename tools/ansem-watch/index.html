@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>ANSEM CARNAGE WATCH</title>
+<title>aggr.sh</title>
 <style>
   :root {
     --bg: #0a0a0d;
@@ -132,7 +132,7 @@
 
   <div class="panel" id="hdr">
     <div>
-      <div class="title"><span class="skull">☠</span> $ANSEM CARNAGE WATCH</div>
+      <div class="title"><span class="skull">☠</span> aggr.sh</div>
       <div style="color:var(--dim);font-size:10px">The Black Bull · 9cRC…pump</div>
     </div>
     <div id="price">—</div>
@@ -202,9 +202,9 @@ let lastMsg = 0, mode = "?";
 function renderOverview(d) {
   prevPrice = price; price = d.price;
   if (d.symbol) {
-    document.title = d.symbol + " CARNAGE WATCH";
+    document.title = "aggr.sh · " + d.symbol;
     const t = document.querySelector("#hdr .title");
-    if (t) t.innerHTML = '<span class="skull">\u2620</span> $' + d.symbol + " CARNAGE WATCH";
+    if (t) t.innerHTML = '<span class="skull">\u2620</span> aggr.sh <span style="color:var(--dim);font-weight:400">\u00b7 $' + d.symbol + '</span>';
     const sub = document.querySelector("#hdr .title + div");
     if (sub && d.address) sub.textContent = (d.name || "") + " \u00b7 " + d.address.slice(0,4) + "\u2026" + d.address.slice(-4);
   }

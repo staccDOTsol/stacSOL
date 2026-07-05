@@ -8,7 +8,7 @@ WORKDIR /app
 COPY ansem-watch/package.json ansem-watch/bun.lock* ./ansem-watch/
 RUN cd ansem-watch && bun install --production
 
-COPY ansem-watch/server.ts ansem-watch/subs.ts ansem-watch/subs-server.ts ansem-watch/paywall.js ansem-watch/index.html ./ansem-watch/
+COPY ansem-watch/server.ts ansem-watch/subs.ts ansem-watch/subs-server.ts ansem-watch/subs-stream.ts ansem-watch/burn.ts ansem-watch/paywall.js ansem-watch/index.html ./ansem-watch/
 COPY ansem-aggr/dist ./ansem-aggr/dist
 
 ENV DATA_DIR=/data
