@@ -126,23 +126,27 @@ export async function confirmPay(wallet: string, kind: string, signature: string
     return { ...passStatus(wallet), reused: true };
   }
 
+  // quick lookup (a few tries, well under the proxy timeout); if not confirmed
+  // yet return a soft pending so the client keeps polling instead of erroring
   let tx: any = null;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 4; i++) {
     tx = await rpc
       .getTransaction(signature as any, { maxSupportedTransactionVersion: 0, encoding: "json", commitment: "confirmed" })
       .send()
       .catch(() => null);
     if (tx) break;
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1500));
   }
-  if (!tx) throw new Error("transaction not found / not confirmed yet");
-  if (tx.meta?.err) throw new Error("transaction failed on-chain");
+  if (!tx) return { ...passStatus(wallet), pending: true } as any;
+  if (tx.meta?.err) throw new Error("payment transaction failed on-chain");
 
   const keys: string[] = tx.transaction.message.accountKeys.map((k: any) => (typeof k === "string" ? k : k.pubkey));
   const mi = keys.indexOf(MERCHANT);
-  if (mi < 0) throw new Error("merchant not in transaction");
-  const delta = BigInt(tx.meta.postBalances[mi]) - BigInt(tx.meta.preBalances[mi]);
-  if (delta <= 0n) throw new Error("no payment to merchant in that transaction");
+  const delta = mi >= 0 ? BigInt(tx.meta.postBalances[mi]) - BigInt(tx.meta.preBalances[mi]) : 0n;
+  if (delta <= 0n) {
+    if (wallet === MERCHANT) throw new Error("that's the merchant wallet — pay from a different wallet");
+    throw new Error("no payment to the merchant found in that transaction");
+  }
 
   const now = Math.floor(Date.now() / 1000);
   db.run("INSERT INTO used_sigs VALUES (?, ?, ?)", [signature, wallet, now]);

@@ -410,7 +410,7 @@ const server = Bun.serve({
           method: req.method,
           headers: { "content-type": req.headers.get("content-type") ?? "application/json" },
           body: req.method === "POST" ? await req.text() : undefined,
-          signal: AbortSignal.timeout(20000),
+          signal: AbortSignal.timeout(30000),
         });
         const h = new Headers(r.headers);
         h.set("access-control-allow-origin", "*");

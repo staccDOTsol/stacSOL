@@ -357,7 +357,11 @@
               body: JSON.stringify({ wallet: wallet, kind: sel.kind, signature: signature }),
             }).then(function (st) {
               if (st.subscribed) { applyStatus(st); return resolve("done"); }
-              if (st.error && !/not found|not confirmed/.test(st.error)) setMsg(st.error, true);
+              // hard error (payment failed / wrong wallet) → stop; pending → keep polling
+              if (st.error && !/not found|not confirmed|pending|confirming/i.test(st.error)) {
+                setMsg(st.error, true); return resolve("error");
+              }
+              setMsg("confirming payment…");
               if (++tries > 45) return resolve("timeout");
               setTimeout(poll, 2000);
             }).catch(function () { setTimeout(poll, 2000); });
