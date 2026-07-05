@@ -243,6 +243,32 @@ async function pollOverview() {
   } catch (e) { console.error("overview:", e); }
 }
 
+// aggr timeframe (seconds) -> nearest Birdeye OHLCV resolution (min is 1m)
+function tfToBirdeye(sec) {
+  const table = [
+    [60, "1m"], [180, "3m"], [300, "5m"], [900, "15m"], [1800, "30m"],
+    [3600, "1H"], [7200, "2H"], [14400, "4H"], [21600, "6H"], [28800, "8H"],
+    [43200, "12H"], [86400, "1D"], [259200, "3D"], [604800, "1W"],
+  ];
+  let pick = "1m";
+  for (const [s, t] of table) { pick = t; if (sec <= s) break; }
+  const secs = { "1m": 60, "3m": 180, "5m": 300, "15m": 900, "30m": 1800, "1H": 3600, "2H": 7200, "4H": 14400, "6H": 21600, "8H": 28800, "12H": 43200, "1D": 86400, "3D": 259200, "1W": 604800 };
+  return { type: pick, seconds: secs[pick] };
+}
+
+const candleCacheByTf: Record<string, { at: number; data: any }> = {};
+async function candlesForTf(sec: number) {
+  const { type, seconds } = tfToBirdeye(sec);
+  const cached = candleCacheByTf[type];
+  const nowMs = Date.now();
+  if (cached && nowMs - cached.at < 20000) return cached.data;
+  const now = Math.floor(nowMs / 1000);
+  const from = now - seconds * 220; // ~220 bars of history
+  const data = await be(`/defi/ohlcv?address=${MINT}&type=${type}&time_from=${from}&time_to=${now}`);
+  candleCacheByTf[type] = { at: nowMs, data };
+  return data;
+}
+
 async function pollCandles() {
   try {
     const now = Math.floor(Date.now() / 1000);
@@ -351,7 +377,16 @@ const server = Bun.serve({
       return new Response(Bun.file(INDEX), { headers: { "content-type": "text/html" } });
     }
     if (p === "/api/candles") {
-      return Response.json(candlesCache, { headers: CORS });
+      const tf = Number(url.searchParams.get("tf") || 60);
+      if (!tf || tf <= 60) {
+        // sub-minute / 1m: serve the always-warm 1m cache
+        return Response.json(candlesCache, { headers: CORS });
+      }
+      try {
+        return Response.json(await candlesForTf(tf), { headers: CORS });
+      } catch (e) {
+        return Response.json(candlesCache, { headers: CORS });
+      }
     }
     if (p === "/api/debug") {
       console.log(`[debug] ${url.search}`);
