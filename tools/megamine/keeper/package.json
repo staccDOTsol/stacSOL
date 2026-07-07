@@ -1,0 +1,1 @@
+{ "name": "megamine-keeper", "private": true, "dependencies": { "@solana/web3.js": "^1.95.3" } }

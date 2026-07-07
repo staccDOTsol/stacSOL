@@ -1,0 +1,11 @@
+# secrets — never commit
+.env
+.env.*
+keeper/megamine-keeper.json
+*keypair*.json
+*-keeper.json
+
+# build artifacts
+program/target/
+target/
+node_modules/

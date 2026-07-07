@@ -1,0 +1,511 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MEGAMINE — the million voxel mine</title>
+<style>
+  :root {
+    --bg: #0a0a0c; --panel: #131318; --line: #26262e; --text: #d4d4d8;
+    --dim: #71717a; --gold: #eab308;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.45 ui-monospace, SFMono-Regular, Menlo, monospace; overflow: hidden; }
+  #scene { position: fixed; inset: 0; }
+  .hud { position: fixed; z-index: 10; }
+  #topbar { top: 0; left: 0; right: 0; display: flex; align-items: baseline; gap: 16px;
+    padding: 10px 14px; background: linear-gradient(#0a0a0cee, #0a0a0c00); pointer-events: none; }
+  #topbar b { color: var(--gold); font-size: 15px; letter-spacing: 2px; }
+  #topbar .stat { color: var(--dim); }
+  #topbar .stat span { color: var(--text); }
+  #panel { top: 48px; right: 10px; width: 292px; display: flex; flex-direction: column; gap: 8px;
+    max-height: calc(100% - 60px); overflow-y: auto; }
+  #vignette { position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 42%, transparent 55%, #000000b0 130%); }
+  .card { background: #13131899; border: 1px solid var(--line); border-radius: 8px; padding: 9px 11px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); box-shadow: 0 4px 24px #00000066; }
+  .fac { border-left: 3px solid var(--fc, #555); }
+  .fac h3 { margin: 0 0 4px; font-size: 12px; letter-spacing: 1.5px; color: var(--fc); display: flex; justify-content: space-between; }
+  .fac h3 .crown { color: var(--gold); }
+  .row { display: flex; justify-content: space-between; color: var(--dim); }
+  .row b { color: var(--text); font-weight: 500; }
+  .navbar { height: 4px; background: #1e1e24; border-radius: 2px; margin-top: 6px; overflow: hidden; }
+  .navbar i { display: block; height: 100%; background: var(--fc); }
+  #wallet .row { margin: 2px 0; }
+  #wallet button, #join button, .fac button {
+    background: #1c1c22; color: var(--text); border: 1px solid var(--line); border-radius: 4px;
+    padding: 3px 9px; font: inherit; font-size: 12px; cursor: pointer; }
+  #wallet button:hover, #join button:hover, .fac button:hover { border-color: var(--gold); color: var(--gold); }
+  .fac .actions { display: flex; gap: 6px; margin-top: 6px; }
+  #join input { width: 100%; background: #0d0d10; color: var(--text); border: 1px solid var(--line);
+    border-radius: 4px; padding: 6px 8px; font: inherit; margin: 6px 0; }
+  #join .facpick { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+  #join .facpick button { border-left: 3px solid var(--fc); text-align: left; padding: 7px 9px; }
+  #feed { bottom: 10px; left: 10px; width: 330px; max-height: 34%; overflow: hidden;
+    display: flex; flex-direction: column-reverse; gap: 3px; pointer-events: none; font-size: 12px; }
+  #feed div { background: #131318cc; border-left: 2px solid var(--fc, #444); padding: 3px 8px; border-radius: 3px; }
+  #feed .gold { border-color: var(--gold); color: var(--gold); }
+  #grind { position: fixed; left: 50%; bottom: 84px; transform: translateX(-50%); z-index: 11;
+    background: #131318ee; border: 1px solid var(--gold); border-radius: 6px; padding: 8px 16px;
+    color: var(--gold); display: none; }
+  #help { bottom: 10px; right: 10px; color: var(--dim); font-size: 11px; text-align: right; pointer-events: none; }
+  #toast { position: fixed; left: 50%; top: 64px; transform: translateX(-50%); z-index: 20;
+    background: #131318f2; border: 1px solid var(--gold); color: var(--gold); border-radius: 6px;
+    padding: 10px 18px; display: none; font-size: 14px;
+    box-shadow: 0 0 24px #eab30855, 0 0 64px #eab30822; text-shadow: 0 0 12px #eab30866; }
+  #feed .gold { text-shadow: 0 0 10px #eab30888; }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="vignette"></div>
+
+<div class="hud" id="topbar">
+  <b>MEGAMINE</b>
+  <span class="stat">round <span id="roundId">–</span></span>
+  <span class="stat">rotates in <span id="roundClock">–</span></span>
+  <span class="stat">pot <span id="pot">–</span> SOL</span>
+  <span class="stat">veins left <span id="veins">–</span></span>
+  <span class="stat">seed <span id="seed">–</span></span>
+  <span class="stat"><a href="/" style="color:var(--gold);pointer-events:auto">⛏ play on MAINNET →</a></span>
+</div>
+
+<div class="hud" id="panel">
+  <div class="card" id="join">
+    <div style="letter-spacing:1px">JOIN THE DIG</div>
+    <input id="name" placeholder="miner name" maxlength="24" />
+    <div class="facpick" id="facpick"></div>
+  </div>
+  <div class="card" id="wallet" style="display:none">
+    <div class="row"><span id="whoami"></span><b id="mysol"></b></div>
+    <div class="row"><span>my tokens</span><b id="mytok"></b></div>
+    <div class="row"><span>dug / strikes</span><b id="mydug"></b></div>
+  </div>
+  <div id="facs"></div>
+  <div class="card" id="board" style="font-size:12px"></div>
+</div>
+
+<div id="grind">grinding proof-of-work… <span id="grindPct">0</span>k hashes</div>
+<div id="toast"></div>
+<div class="hud" id="feed"></div>
+<div class="hud" id="help">drag orbit · wheel zoom · click exposed rock to dig<br/>dig = burn 1 faction token + PoW · veins pay you + your faction's floor</div>
+
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+// ---------- state ----------
+let SIZE = 100, DIFF_BITS = 20;
+let me = JSON.parse(localStorage.getItem("megamine.me") || "null");
+let state = null, world = null, lastSeq = 0, roundSeed = "";
+const FCOLORS = {}; // f -> THREE.Color, filled from /state
+
+const $ = (id) => document.getElementById(id);
+const toast = (msg, ms = 2600) => { const t = $("toast"); t.textContent = msg; t.style.display = "block";
+  clearTimeout(toast._h); toast._h = setTimeout(() => (t.style.display = "none"), ms); };
+
+// ---------- pow worker (cyrb53 — identical to server) ----------
+const workerSrc = `
+function powHash(str){let h1=0xdeadbeef|0,h2=0x41c6ce57|0;
+for(let i=0;i<str.length;i++){const ch=str.charCodeAt(i);
+h1=Math.imul(h1^ch,2654435761);h2=Math.imul(h2^ch,1597334677);}
+h1=Math.imul(h1^(h1>>>16),2246822507);h1^=Math.imul(h2^(h2>>>13),3266489909);
+h2=Math.imul(h2^(h2>>>16),2246822507);h2^=Math.imul(h1^(h1>>>13),3266489909);
+return 4294967296*(2097151&h2)+(h1>>>0);}
+onmessage=(e)=>{const{prefix,target}=e.data;let n=0;
+for(;;){for(let i=0;i<50000;i++,n++){if(powHash(prefix+n)<target){postMessage({nonce:n});return;}}
+postMessage({progress:n});}};`;
+const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })));
+
+// ---------- three.js scene ----------
+const renderer = new THREE.WebGLRenderer({ canvas: $("scene"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x07070a);
+scene.fog = new THREE.Fog(0x07070a, 300, 760);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+camera.position.set(150, 120, 170);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(0, 0, 0);
+controls.enableDamping = true;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.6; // until first grab
+renderer.domElement.addEventListener("pointerdown", () => (controls.autoRotate = false), { once: true });
+
+scene.add(new THREE.HemisphereLight(0x9a9aa5, 0x2a221a, 0.85));
+scene.add(new THREE.AmbientLight(0x7a7a85, 0.35));
+const key = new THREE.DirectionalLight(0xffe8c0, 1.5); key.position.set(180, 260, 120); scene.add(key);
+const fill = new THREE.DirectionalLight(0xc8cfe8, 0.55); fill.position.set(-140, 40, 200); scene.add(fill);
+const rim = new THREE.DirectionalLight(0x8a7cff, 0.3); rim.position.set(-200, -60, -160); scene.add(rim);
+const under = new THREE.DirectionalLight(0xff9a3c, 0.25); under.position.set(40, -220, 60); scene.add(under);
+
+// starfield
+{
+  const pos = new Float32Array(1500 * 3);
+  for (let i = 0; i < 1500; i++) {
+    const r = 550 + Math.random() * 450, t = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1;
+    const s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(t), r * u, r * s * Math.sin(t)], i * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0x9aa0c8, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.75 })));
+}
+
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+
+// voxel meshes: rock (exposed intact), claims (dug, faction-glow), gold (strikes)
+const CAP_ROCK = 400_000, CAP_CLAIM = 400_000, CAP_GOLD = 4_096;
+const box = new RoundedBoxGeometry(1, 1, 1, 2, 0.09);
+const claimBox = new RoundedBoxGeometry(0.86, 0.86, 0.86, 2, 0.12);
+const rockMesh = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({ roughness: 0.94, metalness: 0.06 }), CAP_ROCK);
+const claimMat = new THREE.MeshBasicMaterial({ toneMapped: false }); // instanceColor >1 → bloom glow
+const claimMesh = new THREE.InstancedMesh(claimBox, claimMat, CAP_CLAIM);
+const goldMat = new THREE.MeshBasicMaterial({ color: 0xffc832, toneMapped: false });
+const goldMesh = new THREE.InstancedMesh(claimBox, goldMat, CAP_GOLD);
+for (const m of [rockMesh, claimMesh, goldMesh]) { m.count = 0; m.frustumCulled = false; scene.add(m); }
+
+// post: bloom picks up claim/gold glow, rock stays matte
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloom = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.45, 0.85);
+composer.addPass(bloom);
+composer.addPass(new OutputPass());
+addEventListener("resize", resize); resize();
+rockMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP_ROCK * 3), 3);
+claimMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP_CLAIM * 3), 3);
+
+const HALF = () => SIZE / 2 - 0.5;
+const posOf = (i) => [i % SIZE - HALF(), Math.floor(i / SIZE) % SIZE - HALF(), Math.floor(i / (SIZE * SIZE)) - HALF()];
+const M = new THREE.Matrix4();
+const rockSlotToIdx = new Int32Array(CAP_ROCK); // instance slot -> voxel idx
+const idxToRockSlot = new Map(); // voxel idx -> instance slot
+let claimCount = 0, goldCount = 0;
+
+const rockColor = (i) => {
+  const n = (Math.imul(i ^ 0x9e3779b9, 2654435761) >>> 8) % 1000 / 1000;
+  const x = i % SIZE, y = Math.floor(i / SIZE) % SIZE, z = Math.floor(i / (SIZE * SIZE));
+  const depth = Math.min(x, y, z, SIZE - 1 - x, SIZE - 1 - y, SIZE - 1 - z);
+  const shade = Math.max(0.35, 1 - depth * 0.045); // deeper rock reads darker — fake AO in tunnels
+  const v = (0.34 + n * 0.22) * shade;
+  return new THREE.Color(v, v * 0.98, v * 1.03);
+};
+const CLAIMGLOW = {}; // f -> boosted color for bloom
+
+function addRock(i) {
+  if (idxToRockSlot.has(i)) return;
+  const slot = rockMesh.count++;
+  rockSlotToIdx[slot] = i; idxToRockSlot.set(i, slot);
+  const [x, y, z] = posOf(i);
+  rockMesh.setMatrixAt(slot, M.makeTranslation(x, y, z));
+  rockMesh.setColorAt(slot, rockColor(i));
+}
+function removeRock(i) {
+  const slot = idxToRockSlot.get(i);
+  if (slot === undefined) return;
+  const last = --rockMesh.count;
+  if (slot !== last) { // swap last into the hole
+    const li = rockSlotToIdx[last];
+    rockMesh.getMatrixAt(last, M); rockMesh.setMatrixAt(slot, M);
+    rockMesh.setColorAt(slot, rockColor(li));
+    rockSlotToIdx[slot] = li; idxToRockSlot.set(li, slot);
+  }
+  idxToRockSlot.delete(i);
+}
+function addClaim(i, f) {
+  if (claimCount >= CAP_CLAIM) return;
+  const [x, y, z] = posOf(i);
+  claimMesh.setMatrixAt(claimCount, M.makeTranslation(x, y, z));
+  claimMesh.setColorAt(claimCount, CLAIMGLOW[f] ?? new THREE.Color(0.6, 0.6, 0.6));
+  claimMesh.count = ++claimCount;
+}
+
+// dig particle bursts
+const bursts = [];
+function burst(i, color, big = false) {
+  const n = big ? 60 : 22;
+  const pos = new Float32Array(n * 3), vel = [];
+  const [cx, cy, cz] = posOf(i);
+  for (let k = 0; k < n; k++) {
+    pos.set([cx, cy, cz], k * 3);
+    const t = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1, s = Math.sqrt(1 - u * u);
+    const sp = (big ? 14 : 7) * (0.4 + Math.random());
+    vel.push([sp * s * Math.cos(t), sp * u, sp * s * Math.sin(t)]);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  const m = new THREE.PointsMaterial({ color, size: big ? 3.2 : 2.2, sizeAttenuation: false, transparent: true, opacity: 1, toneMapped: false });
+  const pts = new THREE.Points(g, m);
+  scene.add(pts);
+  bursts.push({ pts, vel, life: big ? 1.1 : 0.6, t: 0 });
+}
+function stepBursts(dt) {
+  for (let b = bursts.length - 1; b >= 0; b--) {
+    const B = bursts[b];
+    B.t += dt;
+    const pos = B.pts.geometry.attributes.position;
+    for (let k = 0; k < B.vel.length; k++) {
+      pos.array[k * 3] += B.vel[k][0] * dt;
+      pos.array[k * 3 + 1] += B.vel[k][1] * dt;
+      pos.array[k * 3 + 2] += B.vel[k][2] * dt;
+      B.vel[k][1] -= 9 * dt; // gravity, because it's satisfying
+    }
+    pos.needsUpdate = true;
+    B.pts.material.opacity = Math.max(0, 1 - B.t / B.life);
+    if (B.t >= B.life) { scene.remove(B.pts); B.pts.geometry.dispose(); B.pts.material.dispose(); bursts.splice(b, 1); }
+  }
+}
+function addGold(i) {
+  if (goldCount >= CAP_GOLD) return;
+  const [x, y, z] = posOf(i);
+  goldMesh.setMatrixAt(goldCount, M.makeTranslation(x, y, z));
+  goldMesh.count = ++goldCount;
+}
+const dirty = () => {
+  rockMesh.instanceMatrix.needsUpdate = true; rockMesh.instanceColor.needsUpdate = true;
+  claimMesh.instanceMatrix.needsUpdate = true; claimMesh.instanceColor.needsUpdate = true;
+  goldMesh.instanceMatrix.needsUpdate = true;
+};
+
+const inB = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < SIZE && y < SIZE && z < SIZE;
+const NB = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+const idxOf = (x, y, z) => x + y * SIZE + z * SIZE * SIZE;
+
+function isExposed(i) {
+  const x = i % SIZE, y = Math.floor(i / SIZE) % SIZE, z = Math.floor(i / (SIZE * SIZE));
+  if (x === 0 || y === 0 || z === 0 || x === SIZE - 1 || y === SIZE - 1 || z === SIZE - 1) return true;
+  return NB.some(([dx, dy, dz]) => world[idxOf(x + dx, y + dy, z + dz)] !== 0);
+}
+
+function buildWorld() {
+  rockMesh.count = 0; idxToRockSlot.clear(); claimCount = 0; claimMesh.count = 0;
+  for (let i = 0; i < world.length; i++) {
+    if (world[i] === 0) { if (isExposed(i)) addRock(i); }
+    else addClaim(i, world[i]);
+  }
+  dirty();
+}
+
+function applyDig(i, f) {
+  if (!world || world[i] !== 0) return;
+  world[i] = f;
+  removeRock(i); addClaim(i, f);
+  burst(i, FCOLORS[f] ?? 0x888888);
+  const x = i % SIZE, y = Math.floor(i / SIZE) % SIZE, z = Math.floor(i / (SIZE * SIZE));
+  for (const [dx, dy, dz] of NB) {
+    const nx = x + dx, ny = y + dy, nz = z + dz;
+    if (inB(nx, ny, nz) && world[idxOf(nx, ny, nz)] === 0) addRock(idxOf(nx, ny, nz));
+  }
+  dirty();
+}
+
+// ---------- picking & dig flow ----------
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 5) return; // was a drag
+  downAt = null;
+  if (!world) return;
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObject(rockMesh, false)[0];
+  if (!hit || hit.instanceId === undefined) return;
+  const idx = rockSlotToIdx[hit.instanceId];
+  if (!me) { toast("join a faction first →"); return; }
+  startDig(idx);
+});
+
+let grinding = false;
+function startDig(idx) {
+  if (grinding) { toast("already grinding"); return; }
+  grinding = true;
+  $("grind").style.display = "block"; $("grindPct").textContent = "0";
+  const target = 2 ** 53 / 2 ** DIFF_BITS;
+  worker.onmessage = async (ev) => {
+    if (ev.data.progress !== undefined) { $("grindPct").textContent = Math.round(ev.data.progress / 1000); return; }
+    $("grind").style.display = "none"; grinding = false;
+    const res = await api("/dig", { id: me.id, idx, nonce: String(ev.data.nonce) });
+    if (res.error) { toast(res.error); return; }
+    updateMe(res);
+    applyDig(idx, me.f);
+    if (res.strike) { addGold(idx); dirty(); burst(idx, 0xffd54a, true); toast(`⛏ VEIN STRIKE — ${res.strike.toFixed(3)} SOL split with the ${facName(me.f)} floor`, 4200); }
+  };
+  worker.postMessage({ prefix: `${me.id}:${idx}:${roundSeed}:`, target });
+}
+
+// ---------- api & hud ----------
+const api = (path, body) => fetch(path, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body) }).then((r) => r.json());
+const facName = (f) => state?.factions.find((x) => x.f === f)?.name ?? `F${f}`;
+const fmt = (n, d = 4) => { const s = Number(n).toFixed(d); return s.includes(".") ? s.replace(/0+$/, "").replace(/\.$/, "") : s; };
+
+function updateMe(m) {
+  if (m.error) return;
+  me = { ...me, ...m };
+  localStorage.setItem("megamine.me", JSON.stringify({ id: me.id, name: me.name, f: me.f }));
+  $("join").style.display = "none";
+  $("wallet").style.display = "block";
+  $("whoami").textContent = `${me.name} · ${facName(me.f)}`;
+  $("mysol").textContent = `${fmt(me.sol, 3)} SOL`;
+  $("mytok").textContent = Object.entries(me.tokens).filter(([, v]) => v > 0.0005)
+    .map(([f, v]) => `${fmt(v, 2)} ${facName(+f)[0]}`).join(" · ") || "none — buy in";
+  $("mydug").textContent = `${me.dug} / ${me.strikes} (${fmt(me.struckSol, 3)} SOL)`;
+}
+
+function renderJoin() {
+  const pick = $("facpick");
+  if (pick.childElementCount || !state) return;
+  for (const F of state.factions) {
+    const b = document.createElement("button");
+    b.style.setProperty("--fc", F.color);
+    b.textContent = F.name;
+    b.onclick = async () => {
+      const name = $("name").value.trim() || "anon miner";
+      const res = await api("/join", { name, faction: F.f });
+      if (res.error) return toast(res.error);
+      updateMe(res);
+      renderFactions(); // buy/sell buttons appear immediately
+      toast(`joined ${F.name} with 10 demo SOL — buy tokens, then dig`);
+    };
+    pick.appendChild(b);
+  }
+}
+
+function renderFactions() {
+  const el = $("facs");
+  const lead = [...state.factions].sort((a, b) => b.navSol - a.navSol)[0];
+  const maxNav = Math.max(...state.factions.map((f) => f.navSol), 1e-9);
+  el.innerHTML = state.factions.map((F) => `
+    <div class="card fac" style="--fc:${F.color}">
+      <h3>${F.name}${F.f === lead.f ? ' <span class="crown">▲ floor lead</span>' : ""}</h3>
+      <div class="row"><span>price</span><b>${fmt(F.priceSol, 5)} SOL</b></div>
+      <div class="row"><span>NAV floor</span><b>${fmt(F.navSol, 5)} SOL</b></div>
+      <div class="row"><span>backing</span><b>${F.backingPct.toFixed(1)}%</b></div>
+      <div class="row"><span>vault / supply</span><b>${fmt(F.vaultSol, 1)} ◎ / ${fmt(F.supplyTokens, 0)}</b></div>
+      <div class="row"><span>voxels claimed</span><b>${F.dug.toLocaleString()}</b></div>
+      <div class="navbar"><i style="width:${(F.navSol / maxNav) * 100}%"></i></div>
+      ${me ? `<div class="actions">
+        <button data-buy="${F.f}">buy 0.5◎</button>
+        <button data-sell="${F.f}">sell 25%</button>
+      </div>` : ""}
+    </div>`).join("");
+  el.querySelectorAll("[data-buy]").forEach((b) => (b.onclick = async () => {
+    const res = await api("/buy", { id: me.id, faction: +b.dataset.buy, sol: 0.5 });
+    res.error ? toast(res.error) : updateMe(res);
+  }));
+  el.querySelectorAll("[data-sell]").forEach((b) => (b.onclick = async () => {
+    const f = +b.dataset.sell;
+    const amt = (me.tokens?.[f] ?? 0) * 0.25;
+    if (amt <= 0) return toast("nothing to sell");
+    const res = await api("/sell", { id: me.id, faction: f, tokens: amt });
+    res.error ? toast(res.error) : updateMe(res);
+  }));
+}
+
+function renderBoard() {
+  $("board").innerHTML = "<div style='letter-spacing:1px;margin-bottom:4px'>TOP MINERS</div>" +
+    state.leaderboard.map((p) => {
+      const F = state.factions.find((x) => x.f === p.f);
+      return `<div class="row"><span style="color:${F?.color}">${p.name}${p.bot ? " 🤖" : ""}</span><b>${p.dug}⛏ ${fmt(p.struckSol, 2)}◎</b></div>`;
+    }).join("");
+}
+
+function feed(e) {
+  const F = state?.factions.find((x) => x.f === e.f);
+  const el = document.createElement("div");
+  el.style.setProperty("--fc", F?.color ?? "#444");
+  if (e.t === "strike") { el.className = "gold"; el.textContent = `⛏ ${e.by} struck ${fmt(e.sol, 3)} SOL at depth ${e.depth} — half to the ${F?.name} floor`; }
+  else if (e.t === "buy") el.textContent = `${e.by} bought ${fmt(e.sol, 2)} SOL of ${F?.name}`;
+  else if (e.t === "sell") el.textContent = `${e.by} sold ${fmt(e.tokens, 1)} ${F?.name}`;
+  else if (e.t === "join") el.textContent = `${e.by} joined ${F?.name}`;
+  else if (e.t === "round") el.textContent = `— round ${e.id} · mine reshuffled · seed ${e.seed} —`;
+  else return;
+  $("feed").prepend(el);
+  while ($("feed").childElementCount > 24) $("feed").lastChild.remove();
+}
+
+// ---------- polling ----------
+async function refreshState() {
+  state = await fetch("/state").then((r) => r.json());
+  SIZE = state.size; DIFF_BITS = state.diffBits; roundSeed = state.round.seed;
+  for (const F of state.factions) {
+    FCOLORS[F.f] = new THREE.Color(F.color);
+    CLAIMGLOW[F.f] = FCOLORS[F.f].clone().multiplyScalar(1.45); // >1 so bloom catches it
+  }
+  $("roundId").textContent = state.round.id;
+  $("pot").textContent = fmt(state.round.potSol, 2);
+  $("veins").textContent = state.round.veins;
+  $("seed").textContent = state.round.seed;
+  renderJoin(); renderFactions(); renderBoard();
+}
+
+async function poll() {
+  try {
+    const d = await fetch(`/delta?since=${lastSeq}`).then((r) => r.json());
+    for (const e of d.events) {
+      if (e.t === "dig") applyDig(e.idx, e.f);
+      if (e.t === "strike") { addGold(e.idx); dirty(); }
+      if (e.t === "round") roundSeed = e.seed;
+      feed(e);
+    }
+    lastSeq = d.seq;
+  } catch {}
+}
+
+setInterval(() => {
+  if (!state) return;
+  const ms = state.round.endsAt - Date.now();
+  $("roundClock").textContent = ms > 0 ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}` : "…";
+}, 500);
+
+(async () => {
+  await refreshState();
+  const buf = await fetch("/world").then((r) => r.arrayBuffer());
+  world = new Uint8Array(buf);
+  buildWorld();
+  if (me?.id) { const m = await fetch(`/me?id=${me.id}`).then((r) => r.json()); m.error ? (me = null, localStorage.removeItem("megamine.me")) : updateMe(m); }
+  setInterval(poll, 1000);
+  setInterval(refreshState, 4000);
+})();
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const dt = Math.min(clock.getDelta(), 0.1);
+  controls.update();
+  stepBursts(dt);
+  goldMat.color.setHSL(0.115, 1, 0.55 + 0.2 * Math.sin(clock.elapsedTime * 3)).multiplyScalar(1.6); // veins pulse past bloom threshold
+  composer.render();
+});
+
+// debug/automation hook (console + tests): raycast a screen point, force a dig
+window.__mm = {
+  rocks: () => rockMesh.count,
+  pick: (cx, cy) => {
+    mouse.set((cx / innerWidth) * 2 - 1, -(cy / innerHeight) * 2 + 1);
+    ray.setFromCamera(mouse, camera);
+    const hit = ray.intersectObject(rockMesh, false)[0];
+    return hit ? { idx: rockSlotToIdx[hit.instanceId], dist: hit.distance } : null;
+  },
+  dig: (idx) => startDig(idx),
+};
+</script>
+</body>
+</html>

@@ -1,0 +1,918 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>MEGAMINE — on-chain (mainnet)</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@500;700&display=swap" rel="stylesheet" />
+<style>
+  :root {
+    /* greed under lamplight — warm charcoal ramp, gold only where it pays */
+    --bg: oklch(14% 0.012 75);
+    --panel: oklch(19% 0.016 80 / 0.72);
+    --panel-solid: oklch(19% 0.016 80);
+    --line: oklch(32% 0.022 80);
+    --line-hot: oklch(46% 0.05 85);
+    --text: oklch(90% 0.012 85);
+    --dim: oklch(64% 0.022 80);
+    --faint: oklch(46% 0.018 80);
+    --gold: oklch(80% 0.155 85);
+    --gold-hot: oklch(88% 0.17 90);
+    --danger: oklch(68% 0.19 25);
+    --mono: ui-monospace, SFMono-Regular, Menlo, monospace;
+    --display: "Chakra Petch", var(--mono);
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--text);
+    font: 13px/1.5 var(--mono); font-variant-numeric: tabular-nums; overflow: hidden; }
+  #scene { position: fixed; inset: 0; }
+  #vignette { position: fixed; inset: 0; z-index: 2; pointer-events: none;
+    background: radial-gradient(ellipse at 50% 44%, transparent 52%, oklch(8% 0.015 70 / 0.78) 128%); }
+  .hud { position: fixed; z-index: 10; }
+
+  /* -- top strip: thin chrome, the scene owns the screen -- */
+  #topbar { top: 0; left: 0; right: 0; display: flex; align-items: baseline; gap: 18px;
+    padding: 12px 18px; background: linear-gradient(oklch(12% 0.012 75 / 0.92), transparent);
+    pointer-events: none; }
+  #topbar b { font: 700 19px/1 var(--display); letter-spacing: 0.14em; color: var(--gold);
+    text-shadow: 0 0 22px oklch(80% 0.155 85 / 0.35); }
+  #topbar .stat { color: var(--faint); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  #topbar .stat span { color: var(--dim); }
+  #topbar a { pointer-events: auto; color: var(--faint); text-decoration: none; }
+  #topbar a:hover { color: var(--gold); }
+
+  #panel { top: 52px; right: 12px; width: 306px; display: flex; flex-direction: column; gap: 9px;
+    max-height: calc(100% - 64px); overflow-y: auto; scrollbar-width: none; }
+  #panel::-webkit-scrollbar { display: none; }
+  #sheetGrab { display: none; } /* mobile-only bottom-sheet grabber */
+
+  .card { background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+    padding: 11px 13px; backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    box-shadow: 0 6px 28px oklch(0% 0 0 / 0.45); }
+  .card .label { font: 700 10px/1 var(--display); letter-spacing: 0.22em; color: var(--faint);
+    text-transform: uppercase; margin-bottom: 8px; }
+
+  /* -- faction cards: NAV is the scoreboard, everything else is metadata -- */
+  .fac { border-left: 3px solid var(--fc, var(--line)); }
+  .fac h3 { margin: 0 0 7px; font: 700 12px/1 var(--display); letter-spacing: 0.18em;
+    color: var(--fc); display: flex; align-items: center; gap: 7px; text-transform: uppercase; }
+  .fac h3 .chip { font: 500 9px/1 var(--display); letter-spacing: 0.12em; color: var(--dim);
+    border: 1px solid var(--line); border-radius: 99px; padding: 2.5px 7px; }
+  .fac h3 .chip.you { color: var(--gold); border-color: var(--gold); }
+  .fac .nav { display: flex; align-items: baseline; justify-content: space-between; margin: 2px 0 6px; }
+  .fac .nav b { font-size: 17px; font-weight: 600; color: var(--text); letter-spacing: -0.01em; }
+  .fac .nav b.flash { animation: navflash 900ms ease-out; }
+  .fac .nav span { color: var(--faint); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; }
+  .row { display: flex; justify-content: space-between; color: var(--faint); font-size: 12px; }
+  .row b { color: var(--dim); font-weight: 500; }
+
+  /* -- buttons: 7 states, not 2 -- */
+  button { background: oklch(24% 0.02 80); color: var(--text); border: 1px solid var(--line);
+    border-radius: 6px; padding: 6px 12px; font: 500 12px var(--mono); cursor: pointer;
+    transition: border-color 140ms ease, color 140ms ease, transform 90ms ease, background 140ms ease; }
+  button:hover { border-color: var(--gold); color: var(--gold-hot); transform: translateY(-1px); }
+  button:active { transform: translateY(0.5px); }
+  button:focus-visible { outline: 2px solid var(--gold); outline-offset: 2px; }
+  button:disabled { opacity: 0.38; cursor: default; transform: none; }
+  button.busy { color: var(--faint); pointer-events: none; position: relative; }
+  button.busy::after { content: ""; display: inline-block; width: 9px; height: 9px; margin-left: 7px;
+    border: 1.5px solid var(--faint); border-top-color: var(--gold); border-radius: 50%;
+    animation: spin 700ms linear infinite; vertical-align: -1px; }
+  button.primary { background: linear-gradient(oklch(78% 0.15 85), oklch(70% 0.15 80));
+    color: oklch(18% 0.03 80); border-color: var(--gold-hot); font-weight: 700;
+    box-shadow: 0 0 26px oklch(80% 0.155 85 / 0.32); }
+  button.primary:hover { color: oklch(12% 0.03 80); box-shadow: 0 0 40px oklch(80% 0.155 85 / 0.5); }
+  .actions { display: flex; gap: 7px; margin-top: 8px; }
+  .actions.sellrow { margin-top: 6px; }
+  .sellrow .selllbl { align-self: center; color: var(--faint); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; margin-right: 2px; }
+  .sellrow button { flex: 1; padding: 5px 0; font-size: 11px; color: var(--dim); }
+  .sellrow button:hover { border-color: var(--danger); color: oklch(78% 0.14 25); }
+
+  /* -- first-visit: one dominant action, then get out of the way -- */
+  #intro { position: fixed; inset: 0; z-index: 30; display: flex; align-items: flex-end;
+    background: linear-gradient(105deg, oklch(10% 0.015 75 / 0.94) 30%, oklch(10% 0.015 75 / 0.55) 70%, transparent);
+    opacity: 1; transition: opacity 480ms ease; }
+  #intro.gone { opacity: 0; pointer-events: none; }
+  #intro .pitch { margin: 0 0 11vh 6vw; max-width: 34rem; }
+  #intro h1 { font: 700 clamp(38px, 6vw, 62px)/0.95 var(--display); letter-spacing: 0.06em;
+    color: var(--gold); margin: 0 0 14px; text-shadow: 0 0 44px oklch(80% 0.155 85 / 0.4); }
+  #intro p { color: var(--dim); font-size: 14px; line-height: 1.65; margin: 0 0 22px; max-width: 44ch; }
+  #intro p b { color: var(--text); font-weight: 500; }
+  #intro .cta { display: flex; gap: 11px; align-items: center; }
+  #intro .cta button { padding: 11px 22px; font-size: 13px; }
+  #intro .fine { margin-top: 16px; color: var(--faint); font-size: 11px; }
+
+  /* -- feed, grind, help -- */
+  #status { bottom: 12px; left: 12px; width: 400px; max-height: 32%; overflow: hidden; display: flex;
+    flex-direction: column-reverse; gap: 4px; pointer-events: none; font-size: 12px; }
+  #status div { background: var(--panel); backdrop-filter: blur(8px); border-left: 2px solid var(--line);
+    padding: 4px 9px; border-radius: 4px; animation: feedin 260ms ease-out; }
+  #status .gold { border-color: var(--gold); color: var(--gold); text-shadow: 0 0 12px oklch(80% 0.155 85 / 0.5); }
+  #status .err { border-color: var(--danger); color: oklch(80% 0.12 25); }
+  #grind { position: fixed; left: 50%; bottom: 88px; transform: translateX(-50%); z-index: 11;
+    background: var(--panel-solid); border: 1px solid var(--gold); border-radius: 8px; padding: 9px 18px;
+    color: var(--gold); display: none; animation: grindpulse 1.4s ease-in-out infinite; }
+  #help { bottom: 12px; right: 12px; color: var(--faint); font-size: 11px; text-align: right;
+    pointer-events: none; line-height: 1.7; }
+  #help i { font-style: normal; color: var(--dim); border: 1px solid var(--line); border-radius: 4px;
+    padding: 1px 5px; }
+
+  .card.enter { animation: cardin 340ms cubic-bezier(0.2, 0.7, 0.3, 1) backwards; }
+
+  /* -- onboarding coach -- */
+  #coach { position: fixed; z-index: 20; left: 12px; bottom: 92px; width: 322px; display: none;
+    background: var(--panel-solid); border: 1px solid var(--gold); border-radius: 10px; padding: 12px 14px;
+    box-shadow: 0 0 30px oklch(80% 0.155 85 / 0.28); animation: cardin 300ms ease backwards; }
+  #coach .ctitle { font: 700 13px var(--display); letter-spacing: 0.06em; color: var(--gold); margin-bottom: 5px; }
+  #coach .cbody { color: var(--dim); font-size: 12px; line-height: 1.55; }
+  #coach .cbody b { color: var(--text); font-weight: 600; }
+  #coach .cdots { display: flex; gap: 6px; margin-top: 11px; }
+  #coach .cdots i { width: 18px; height: 3px; border-radius: 2px; background: var(--line); transition: background 200ms; }
+  #coach .cdots i.on { background: var(--gold); box-shadow: 0 0 8px oklch(80% 0.155 85 / 0.6); }
+  #digArrow { position: fixed; z-index: 12; left: 50%; top: 13%; transform: translateX(-58%);
+    display: none; flex-direction: column; align-items: center; gap: 3px; pointer-events: none; }
+  #digArrow .lab { font: 700 14px var(--display); letter-spacing: 0.08em; color: oklch(18% 0.03 80);
+    background: linear-gradient(oklch(82% 0.155 85), oklch(72% 0.15 80)); padding: 7px 16px; border-radius: 99px;
+    box-shadow: 0 0 34px oklch(80% 0.155 85 / 0.55); white-space: nowrap; }
+  #digArrow .arw { font-size: 42px; color: var(--gold); line-height: 1; animation: bob 1.1s ease-in-out infinite;
+    text-shadow: 0 0 22px oklch(80% 0.155 85 / 0.7); }
+  @keyframes bob { 50% { transform: translateY(13px); } }
+
+  /* odds card + strike share */
+  #oddsBody .orow { display: flex; justify-content: space-between; font-size: 12px; padding: 3px 0; color: var(--faint); }
+  #oddsBody .orow b { color: var(--text); font-weight: 500; }
+  #oddsBody .ohint { color: var(--faint); font-size: 11px; line-height: 1.5; margin-top: 6px; }
+  #oddsBody .ohint b { color: var(--gold); }
+  #shareBtn { position: fixed; z-index: 21; left: 50%; bottom: 130px; transform: translateX(-50%);
+    padding: 11px 22px; font-size: 14px; animation: grindpulse 1.4s ease-in-out infinite; }
+
+  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes cardin { from { opacity: 0; transform: translateX(14px); } }
+  @keyframes feedin { from { opacity: 0; transform: translateY(5px); } }
+  @keyframes navflash { 0% { color: var(--gold-hot); text-shadow: 0 0 18px oklch(80% 0.155 85 / 0.7); } }
+  @keyframes grindpulse { 50% { box-shadow: 0 0 30px oklch(80% 0.155 85 / 0.4); } }
+
+  /* ---- mobile: the mine owns the screen; controls collapse into a bottom sheet ---- */
+  @media (max-width: 720px) {
+    html, body { font-size: 12px; }
+    #topbar { gap: 5px 10px; padding: 8px 12px; flex-wrap: wrap; align-items: center;
+      background: linear-gradient(oklch(12% 0.012 75 / 0.96), transparent 94%); }
+    #topbar b { font-size: 15px; letter-spacing: 0.1em; }
+    #topbar .stat { font-size: 9.5px; letter-spacing: 0.03em; }
+    #topbar .stat.hide-sm { display: none; }
+
+    /* grabber — the sheet's only visible surface while peeking */
+    #sheetGrab { display: flex; align-items: center; justify-content: center; gap: 9px;
+      position: sticky; top: 0; z-index: 3; padding: 11px 0 9px; cursor: pointer; user-select: none;
+      background: linear-gradient(oklch(12% 0.013 70 / 0.55), transparent); }
+    #sheetGrab .gh { width: 40px; height: 5px; border-radius: 99px; background: var(--faint); }
+    #sheetGrab .gl { font: 700 10px var(--display); letter-spacing: 0.15em; text-transform: uppercase; color: var(--faint); }
+    #sheetGrab::after { content: "▲"; color: var(--gold); font-size: 9px; }
+    body.sheet-open #sheetGrab::after { content: "▼"; }
+
+    /* panel -> bottom sheet, peeking by default so the mine stays visible + clickable */
+    #panel { top: auto; left: 0; right: 0; bottom: 0; width: auto; gap: 8px;
+      max-height: 84vh; overflow: hidden;
+      padding: 0 10px calc(14px + env(safe-area-inset-bottom, 0px));
+      border-radius: 18px 18px 0 0; border-top: 1px solid var(--line);
+      background: linear-gradient(oklch(14% 0.014 70 / 0.82), oklch(10% 0.012 70 / 0.98));
+      backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+      box-shadow: 0 -16px 44px oklch(0% 0 0 / 0.62); z-index: 24;
+      transform: translateY(calc(100% - 44px)); overscroll-behavior: contain;
+      transition: transform 320ms cubic-bezier(0.3, 0.82, 0.3, 1); }
+    body.sheet-open #panel { transform: translateY(0); overflow-y: auto; }
+
+    /* thumb-sized touch targets */
+    .card { padding: 12px 13px; }
+    button { padding: 9px 13px; min-height: 40px; }
+    .sellrow button { min-height: 34px; padding: 6px 0; }
+    #connect, #introConnect, #introWatch { width: 100%; }
+    #intro .cta { flex-direction: column; align-items: stretch; }
+
+    /* declutter + lift floating HUD above the sheet grabber */
+    #help { display: none; }
+    #status { left: 8px; right: 8px; width: auto; bottom: 50px; max-height: 22%; }
+    #coach { left: 8px; right: 8px; width: auto; bottom: 56px; }
+    body.sheet-open #coach, body.sheet-open #status { opacity: 0; pointer-events: none; }
+    #grind { bottom: 62px; }
+    #shareBtn { bottom: 64px; }
+    #digArrow { top: 9%; }
+    #intro .pitch { margin: 0 0 13vh 7vw; }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation: none !important; transition: none !important; }
+  }
+</style>
+</head>
+<body>
+<canvas id="scene"></canvas>
+<div id="vignette"></div>
+
+<div class="hud" id="topbar">
+  <b>MEGAMINE</b>
+  <span class="stat hide-sm">MAINNET · on-chain · canonical uponly</span>
+  <span class="stat hide-sm"><a href="/sim" style="color:var(--dim)">sim →</a></span>
+  <span class="stat">round <span id="roundId">–</span></span>
+  <span class="stat">rotates in <span id="roundClock">–</span></span>
+  <span class="stat">pot <span id="pot">–</span> ◎</span>
+  <span class="stat">live <span id="actD" style="color:var(--gold)">–</span>⛏ · <span id="actV" style="color:var(--gold)">–</span>💎 · <span id="actT" style="color:var(--gold)">–</span>🚩 <span style="opacity:.55">/5m</span></span>
+</div>
+
+<div id="intro">
+  <div class="pitch">
+    <h1>MEGAMINE</h1>
+    <p>A million-voxel mine on Solana mainnet. Factions are <b>uponly curves</b> —
+    every dig burns the token, every vein strike pays you <b>and</b> your faction's floor.
+    Grind proof-of-work in your browser, claim rock forever, race the other floors.</p>
+    <div class="cta">
+      <button class="primary" id="introConnect">connect wallet</button>
+      <button id="introWatch">just watch</button>
+    </div>
+    <div class="fine">composed on canonical uponly · deployer authority not yet burned — size accordingly</div>
+  </div>
+</div>
+
+<div class="hud" id="panel">
+  <div id="sheetGrab"><span class="gh"></span><span class="gl">wallet · factions · buy / sell</span></div>
+  <div class="card" id="walletCard">
+    <div class="label">Wallet</div>
+    <button id="connect">connect wallet</button>
+    <div id="walletInfo" style="display:none">
+      <div class="row"><span id="addr"></span><b id="solBal"></b></div>
+      <div class="row"><span>tokens</span><b id="tokBal">–</b></div>
+    </div>
+  </div>
+  <div class="card" id="oddsCard" style="display:none">
+    <div class="label">Odds · vein & floor</div>
+    <div id="oddsBody"></div>
+  </div>
+  <div id="facs"></div>
+  <div class="card" id="rotateCard" style="display:none">
+    <div class="row"><span>round expired</span><button id="rotateBtn">rotate (permissionless)</button></div>
+  </div>
+</div>
+
+<div id="grind">grinding keccak PoW… <span id="grindPct">0</span>k hashes</div>
+<div class="hud" id="status"></div>
+<div class="hud" id="help"><i>drag</i> orbit · <i>wheel</i> zoom · <i>click rock</i> dig on-chain<br/>
+2 txs: commit (PoW + burn + fee, claims voxel) → reveal (rolls the vein)</div>
+
+<div id="coach"></div>
+<div id="digArrow"><div class="lab">⛏ click a dark rock to dig</div><div class="arw">⬇</div></div>
+<button id="shareBtn" class="primary" style="display:none">💎 share your vein strike</button>
+<script>
+  document.getElementById("sheetGrab").addEventListener("click",
+    () => document.body.classList.toggle("sheet-open"));
+</script>
+
+<script src="https://unpkg.com/@solana/web3.js@1.98.4/lib/index.iife.min.js"></script>
+<script src="https://unpkg.com/js-sha3@0.9.3/build/sha3.min.js"></script>
+<script type="importmap">
+{ "imports": {
+  "three": "https://unpkg.com/three@0.160.0/build/three.module.js",
+  "three/addons/": "https://unpkg.com/three@0.160.0/examples/jsm/"
+} }
+</script>
+<script type="module">
+import * as THREE from "three";
+import { OrbitControls } from "three/addons/controls/OrbitControls.js";
+import { RoundedBoxGeometry } from "three/addons/geometries/RoundedBoxGeometry.js";
+import { EffectComposer } from "three/addons/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/addons/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/addons/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/addons/postprocessing/OutputPass.js";
+
+const W3 = window.solanaWeb3;
+const QS = new URLSearchParams(location.search);
+const RPC = QS.get("rpc") ?? "https://mainnet.helius-rpc.com/?api-key=79ffca1b-78ec-49be-a229-f513df5d2817";
+const conn = new W3.Connection(RPC, "confirmed");
+const MEGAMINE = new W3.PublicKey(QS.get("megamine") ?? "BWduMhsy2Z1ptkL2Pjjb6727zDVxMaFSqbmhuQ6Lmgeq");
+const UPONLY = new W3.PublicKey(QS.get("uponly") ?? "DQf1BBhRNnhthJUmsCT6Rt2whodZyNLbsqKQ3kHYUU6N");
+const TOKEN = new W3.PublicKey("TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA");
+const ATA_PROG = new W3.PublicKey("ATokenGPvbdGVxr1b2hvZbsiqW5xWH25efTNsLJA8knL");
+const pda = (seeds, prog = MEGAMINE) => W3.PublicKey.findProgramAddressSync(seeds, prog)[0];
+const enc = (s) => new TextEncoder().encode(s);
+const CONFIG = pda([enc("config")]);
+const MINE = pda([enc("mine")]);
+const POT = pda([enc("pot")]);
+const SPLITTER = pda([enc("splitter")]);
+const linkPda = (mint) => pda([enc("faction"), mint.toBuffer()]);
+const ataOf = (owner, mint) =>
+  W3.PublicKey.findProgramAddressSync([owner.toBuffer(), TOKEN.toBuffer(), mint.toBuffer()], ATA_PROG)[0];
+
+const PALETTE = ["#a78bfa", "#fb923c", "#34d399", "#e7e5e4", "#f472b6", "#38bdf8", "#facc15", "#f87171"];
+const $ = (id) => document.getElementById(id);
+function say(msg, cls = "") {
+  const el = document.createElement("div");
+  el.className = cls; el.textContent = msg;
+  $("status").prepend(el);
+  while ($("status").childElementCount > 14) $("status").lastChild.remove();
+}
+
+// ---- chain state ----
+let SIZE = Number(QS.get("size") ?? 100), world = null, cfg = null, factions = [], wallet = null, myFaction = null;
+
+// -- onboarding coach: reads live state, points at the next action --
+let hasDug = false, myTokenBal = 0;
+// [n, title, desktopCopy, mobileCopy] — copy is chosen live per render (see updateCoach)
+const COACH = {
+  connect: ["①", "Connect a wallet",
+    "top-right of the panel — <b>connect wallet</b>. Just spectating? ignore me.",
+    "<b>press the bottom bar</b> → <b>connect wallet</b>. Just spectating? ignore me."],
+  faction: ["②", "Join a faction",
+    "pick a faction card on the right → <b>dig for this</b>. That arms it as yours.",
+    "<b>press the bottom bar</b>, pick a faction → <b>dig for this</b>. That arms it as yours."],
+  buy: ["③", "Get some ammo",
+    "tap <b>buy 0.1◎</b> on your faction — every dig <b>burns its token</b>, so you need a bag first.",
+    "<b>press the bottom bar</b>, tap <b>buy 0.1◎</b> — every dig <b>burns its token</b>, so you need a bag first."],
+  dig: ["④", "Dig a rock",
+    "single-<b>click any dark rock</b> in the mine (not the empty box — and don't drag). Phantom pops twice: <b>commit → reveal</b>.",
+    "single-<b>tap any dark rock</b> in the mine (not the empty box). Phantom pops twice: <b>commit → reveal</b>."],
+};
+function coachStep() {
+  if (!wallet) return "connect";
+  if (!myFaction) return "faction";
+  if (myTokenBal <= 0) return "buy";
+  if (!hasDug) return "dig";
+  return "done";
+}
+function updateCoach() {
+  const el = $("coach"), arrow = $("digArrow");
+  if (!el) return;
+  const introUp = typeof intro !== "undefined" && intro && !intro.classList.contains("gone");
+  const s = coachStep();
+  if (s === "done" || introUp) { el.style.display = "none"; arrow.style.display = "none"; return; }
+  const sm = matchMedia("(max-width: 720px)").matches; // live — robust to rotate/resize/load-order
+  if (sm && s === "dig") document.body.classList.remove("sheet-open"); // reveal the mine + arrow when it's time to dig
+  const [n, t, dcopy, mcopy] = COACH[s];
+  const b = sm ? mcopy : dcopy;
+  el.innerHTML = `<div class="ctitle">${n} · ${t}</div><div class="cbody">${b}</div>`
+    + `<div class="cdots">${["connect", "faction", "buy", "dig"].map((k) => `<i class="${k === s ? "on" : ""}"></i>`).join("")}</div>`;
+  el.style.display = "block";
+  arrow.style.display = s === "dig" ? "flex" : "none";
+  if (s === "dig" && typeof controls !== "undefined") controls.autoRotate = false; // hold still so the arrow lines up
+}
+setInterval(() => { try { updateCoach(); } catch {} }, 1500);
+
+// live mainnet activity (diggers + veins + teams, last 5 min) — cached server-side
+let lastActivity = null, potFreeSol = 0;
+function applyActivity(a) {
+  if (!a) return;
+  if ($("actD")) $("actD").textContent = a.diggers ?? "–";
+  if ($("actV")) $("actV").textContent = a.veins ?? "–";
+  if ($("actT")) $("actT").textContent = a.teams ?? "–";
+  if (cfg) renderOdds();
+  const prob = cfg ? cfg.veinThreshold / 2 ** 32 : 0;
+  for (const f of factions) {
+    const el = $(`fa-${f.id}`); const t = a.byTeam?.[f.id];
+    if (el) {
+      if (t && (t.digs || t.veins)) { el.textContent = `${t.digs}⛏${t.veins ? " " + t.veins + "💎" : ""}`; el.style.display = ""; }
+      else el.style.display = "none";
+    }
+    // floor APY estimate from the live dig-rate (buy-&-hold)
+    const ap = $(`apy-${f.id}`);
+    if (ap && cfg) {
+      try {
+        const v = Number(f.vault);
+        if (v > 0) {
+          const veinRw = Math.max(potFreeSol * 0.08 * 1e9, Number(cfg.veinBase)); // elastic strike (surface)
+          const perDigLift = (Number(cfg.digBurn) + prob * 0.5 * veinRw) / v;
+          const digsDay = (t?.digs || 0) * 288;             // 5-min sample → per day
+          ap.textContent = digsDay > 0 ? fmtApy(Math.pow(1 + perDigLift * digsDay, 365) - 1) : "idle";
+        } else ap.textContent = "—";
+      } catch (e) { ap.textContent = "—"; }
+    }
+  }
+}
+async function pollActivity() {
+  try { const a = await (await fetch("/api/activity")).json(); lastActivity = a; applyActivity(a); } catch {}
+}
+function fmtApy(x) {
+  if (!isFinite(x) || x <= 0) return "idle";
+  const p = x * 100;
+  if (p >= 100000) return ">99,999%";
+  if (p >= 1000) return Math.round(p).toLocaleString() + "%";
+  return p.toFixed(0) + "%";
+}
+function renderOdds() {
+  if (!cfg || !$("oddsBody")) return;
+  const prob = cfg.veinThreshold / 2 ** 32;
+  const floor = Number(cfg.veinBase) / 1e9;                    // fixed floor when the pot is thin
+  const surface = Math.max(potFreeSol * 0.08, floor);          // depth 0 → 8% of pot
+  const deep = Math.max(potFreeSol * 0.30, floor * 10.8);      // deepest voxel → 30% of pot
+  $("oddsBody").innerHTML =
+    `<div class="orow"><span>strike odds</span><b>1 in ${Math.round(1 / prob)} · ${(prob * 100).toFixed(2)}%</b></div>`
+    + `<div class="orow"><span>vein reward</span><b>${surface.toFixed(3)}–${deep.toFixed(2)}◎ <span style="opacity:.5">·8–30% of pot</span></b></div>`
+    + `<div class="orow"><span>pot now</span><b>${potFreeSol.toFixed(3)} ◎</b></div>`
+    + `<div class="orow"><span>split</span><b>½ you · ½ your floor</b></div>`
+    + `<div class="ohint">reward <b>scales with the pot</b> — fat pot = fat strikes, and it eases as veins pop. every dig <b>burns supply</b>, so buy-&-hold floor only rises. APYs are live-rate estimates — not a promise.</div>`;
+  $("oddsCard").style.display = "";
+}
+function shareStrike() {
+  const text = "just struck a vein on ⛏ MEGAMINE — a million-voxel mine on Solana where every dig can pop gold. dig it:";
+  const url = "https://megamine.fly.dev/chain";
+  if (navigator.share) navigator.share({ title: "MEGAMINE", text, url }).catch(() => {});
+  else window.open(`https://twitter.com/intent/tweet?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`, "_blank");
+}
+$("shareBtn").onclick = shareStrike;
+pollActivity(); setInterval(pollActivity, 15000);
+let mineLen = 0;
+let rent115 = 1_690_560, rent0 = 890_880;
+
+function parseConfig(d) {
+  const dv = new DataView(d.buffer, d.byteOffset);
+  return {
+    powBits: d[101],
+    digFee: dv.getBigUint64(64, true),
+    foreignMult: d[72],
+    digBurn: dv.getBigUint64(77, true),      // NAV value burned per voxel
+    veinThreshold: dv.getUint32(85, true),   // strike prob = threshold / 2^32
+    veinBase: dv.getBigUint64(89, true),     // base vein reward (×(1+0.2·depth))
+    roundId: dv.getBigUint64(107, true),
+    seed: d.slice(115, 147),
+    endTs: dv.getBigInt64(147, true),
+    mineLen: dv.getUint32(155, true),
+  };
+}
+
+async function loadChain() {
+  const [cfgAcc, mineAcc, potBal] = await Promise.all([
+    conn.getAccountInfo(CONFIG),
+    conn.getAccountInfo(MINE),
+    conn.getBalance(POT),
+  ]);
+  if (!cfgAcc || !mineAcc) { say("mine not initialized on this cluster", "err"); return false; }
+  cfg = parseConfig(cfgAcc.data);
+  mineLen = cfg.mineLen;
+  // surveyed prefix only — the rest of the cube is unsurveyed frontier
+  const fresh = new Uint8Array(SIZE * SIZE * SIZE);
+  fresh.set(new Uint8Array(mineAcc.data).slice(0, Math.min(mineAcc.data.length, fresh.length)));
+  $("roundId").textContent = cfg.roundId;
+  potFreeSol = (potBal - rent0) / 1e9;
+  $("pot").textContent = potFreeSol.toFixed(4);
+
+  // factions: every FactionLink account (dataSize 66)
+  const links = await conn.getProgramAccounts(MEGAMINE, { filters: [{ dataSize: 66 }] });
+  factions = await Promise.all(links.map(async ({ account }) => {
+    const mint = new W3.PublicKey(account.data.slice(0, 32));
+    const curve = new W3.PublicKey(account.data.slice(32, 64));
+    const id = account.data[64];
+    const [curveAcc, mintAcc] = await Promise.all([conn.getAccountInfo(curve), conn.getAccountInfo(mint)]);
+    const vault = curveAcc.lamports - rent115;
+    const supply = new DataView(mintAcc.data.buffer, mintAcc.data.byteOffset).getBigUint64(36, true);
+    const creator = new W3.PublicKey(curveAcc.data.slice(32, 64));      // buy_creator
+    const sellCreator = new W3.PublicKey(curveAcc.data.slice(64, 96));  // sell_creator
+    return { mint, curve, id, vault, supply, creator, sellCreator, color: PALETTE[(id - 1) % PALETTE.length] };
+  }));
+  factions.sort((a, b) => a.id - b.id);
+  renderFactions();
+  return fresh;
+}
+
+function nav(f) { return f.supply > 0n ? Number(f.vault) / (Number(f.supply) / 1e9) / 1e9 : 0; }
+
+let facsRendered = false;
+const prevNavs = {};
+function renderFactions() {
+  if (!factions.length) {
+    $("facs").innerHTML = `<div class="card"><div class="label">Factions</div>
+      <div class="row"><span>none registered yet — the mine awaits its first banner</span></div></div>`;
+    return;
+  }
+  $("facs").innerHTML = factions.map((f, i) => {
+    const navNow = nav(f);
+    const flash = prevNavs[f.id] !== undefined && prevNavs[f.id] !== navNow.toFixed(6) ? " flash" : "";
+    prevNavs[f.id] = navNow.toFixed(6);
+    return `
+    <div class="card fac${facsRendered ? "" : " enter"}" style="--fc:${f.color};animation-delay:${i * 55}ms">
+      <h3>Faction ${f.id}
+        ${f.creator.equals(SPLITTER) ? `<span class="chip">house</span>` : `<span class="chip">guest</span>`}
+        ${myFaction === f.id ? `<span class="chip you">yours</span>` : ""}
+        <span class="chip act" id="fa-${f.id}" style="display:none;margin-left:auto"></span>
+      </h3>
+      <div class="nav"><span>NAV floor</span><b class="${flash.trim()}">${navNow.toFixed(6)} ◎</b></div>
+      <div class="row"><span>vault / supply</span><b>${(Number(f.vault) / 1e9).toFixed(3)} ◎ · ${(Number(f.supply) / 1e9).toFixed(0)}</b></div>
+      <div class="row"><span>mint</span><b>${f.mint.toBase58().slice(0, 8)}…</b></div>
+      <div class="row"><span>floor apy <span style="opacity:.5">est</span></span><b id="apy-${f.id}" style="color:var(--gold)">–</b></div>
+      ${wallet ? `<div class="actions">
+        <button data-buy="${f.id}">buy 0.1◎</button>
+        <button data-join="${f.id}">${myFaction === f.id ? "digging ⛏" : "dig for this"}</button>
+      </div>
+      <div class="actions sellrow">
+        <span class="selllbl">sell</span>
+        <button data-sell="${f.id}" data-pct="25">25%</button>
+        <button data-sell="${f.id}" data-pct="50">50%</button>
+        <button data-sell="${f.id}" data-pct="100">100%</button>
+      </div>` : ""}
+    </div>`;
+  }).join("");
+  facsRendered = true;
+  $("facs").querySelectorAll("[data-buy]").forEach((b) => (b.onclick = () => { b.classList.add("busy"); buy(+b.dataset.buy).finally(() => b.classList.remove("busy")); }));
+  $("facs").querySelectorAll("[data-sell]").forEach((b) => (b.onclick = () => { b.classList.add("busy"); sell(+b.dataset.sell, +b.dataset.pct).finally(() => b.classList.remove("busy")); }));
+  $("facs").querySelectorAll("[data-join]").forEach((b) => (b.onclick = () => { myFaction = +b.dataset.join; renderFactions(); refreshWallet(); updateCoach(); say(`digging for faction ${myFaction}`); }));
+  if (typeof lastActivity !== "undefined" && lastActivity) applyActivity(lastActivity);
+}
+
+// ---- wallet ----
+function detectWallets() {
+  const c = [];
+  if (window.phantom?.solana) c.push(["phantom", window.phantom.solana]);
+  if (window.solflare) c.push(["solflare", window.solflare]);
+  if (window.backpack) c.push(["backpack", window.backpack]);
+  if (window.jupiter) c.push(["jupiter", window.jupiter]);
+  if (!c.length && window.solana) c.push(["wallet", window.solana]);
+  return c;
+}
+async function connectProvider(name, provider) {
+  const res = await provider.connect();
+  const pk = res?.publicKey ?? provider.publicKey;
+  wallet = { provider, pk: new W3.PublicKey(pk.toString()) };
+  $("connect").style.display = "none";
+  document.querySelectorAll("[data-wallet]").forEach((b) => b.remove());
+  $("walletInfo").style.display = "block";
+  $("addr").textContent = wallet.pk.toBase58().slice(0, 4) + "…" + wallet.pk.toBase58().slice(-4);
+  refreshWallet(); renderFactions(); updateCoach();
+  say(`${name} connected (mainnet)`);
+}
+// first-visit overlay: dominant action, then never again
+const intro = $("intro");
+if (localStorage.getItem("megamine.seen")) intro.classList.add("gone");
+const dismissIntro = () => { intro.classList.add("gone"); localStorage.setItem("megamine.seen", "1"); updateCoach(); };
+$("introWatch").onclick = dismissIntro;
+$("introConnect").onclick = () => { dismissIntro(); $("connect").click(); };
+intro.addEventListener("click", (e) => { if (e.target === intro) dismissIntro(); });
+
+$("connect").onclick = async () => {
+  const found = detectWallets();
+  if (!found.length) { say("no Solana wallet found — install Phantom/Solflare/Backpack, or watch read-only", "err"); return; }
+  if (found.length === 1) return connectProvider(...found[0]);
+  $("connect").style.display = "none";
+  for (const [name, provider] of found) {
+    const b = document.createElement("button");
+    b.dataset.wallet = name; b.textContent = name; b.style.marginRight = "6px";
+    b.onclick = () => connectProvider(name, provider).catch((e) => say(String(e.message ?? e), "err"));
+    $("walletCard").appendChild(b);
+  }
+};
+
+async function refreshWallet() {
+  if (!wallet) return;
+  $("solBal").textContent = ((await conn.getBalance(wallet.pk)) / 1e9).toFixed(3) + " ◎";
+  if (myFaction) {
+    const f = factions.find((x) => x.id === myFaction);
+    const acc = await conn.getAccountInfo(ataOf(wallet.pk, f.mint));
+    const amt = acc ? new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true) : 0n;
+    myTokenBal = Number(amt) / 1e9;
+    $("tokBal").textContent = myTokenBal.toFixed(2) + ` F${myFaction}`;
+    updateCoach();
+  }
+}
+
+async function sendTx(ixs) {
+  const tx = new W3.Transaction().add(...ixs);
+  tx.feePayer = wallet.pk;
+  tx.recentBlockhash = (await conn.getLatestBlockhash()).blockhash;
+  const signed = await wallet.provider.signTransaction(tx);
+  const sig = await conn.sendRawTransaction(signed.serialize());
+  await conn.confirmTransaction(sig, "confirmed");
+  return sig;
+}
+
+const u8b = (n) => new Uint8Array([n]);
+function leBytes(n, len) {
+  const b = new Uint8Array(len); let v = BigInt(n);
+  for (let i = 0; i < len; i++) { b[i] = Number(v & 0xffn); v >>= 8n; }
+  return b;
+}
+const cat = (...arrs) => {
+  const out = new Uint8Array(arrs.reduce((s, a) => s + a.length, 0));
+  let o = 0; for (const a of arrs) { out.set(a, o); o += a.length; }
+  return out;
+};
+const meta = (p, s, w) => ({ pubkey: p, isSigner: !!s, isWritable: !!w });
+
+async function buy(fid) {
+  const f = factions.find((x) => x.id === fid);
+  try {
+    const ata = ataOf(wallet.pk, f.mint);
+    const ixs = [
+      new W3.TransactionInstruction({ programId: ATA_PROG, keys: [
+        meta(wallet.pk, 1, 1), meta(ata, 0, 1), meta(wallet.pk), meta(f.mint),
+        meta(W3.SystemProgram.programId), meta(TOKEN),
+      ], data: u8b(1) }),
+      new W3.TransactionInstruction({ programId: UPONLY, keys: [
+        meta(wallet.pk, 1, 1), meta(f.curve, 0, 1), meta(f.mint, 0, 1), meta(ata, 0, 1),
+        meta(f.creator, 0, 1), meta(TOKEN), meta(W3.SystemProgram.programId),
+      ], data: cat(u8b(1), leBytes(100_000_000, 8), leBytes(0, 8)) }),
+    ];
+    say(`buying 0.1 ◎ of faction ${fid}…`);
+    const sig = await sendTx(ixs);
+    say(`bought — ${sig.slice(0, 12)}…`, "gold");
+    myFaction = fid;
+    await refreshAll();
+  } catch (e) { say(String(e.message ?? e), "err"); }
+}
+
+async function sell(fid, pct) {
+  const f = factions.find((x) => x.id === fid);
+  try {
+    const ata = ataOf(wallet.pk, f.mint);
+    const acc = await conn.getAccountInfo(ata);
+    const bal = acc ? new DataView(acc.data.buffer, acc.data.byteOffset).getBigUint64(64, true) : 0n;
+    const amount = (bal * BigInt(pct)) / 100n;
+    if (amount <= 0n) { say(`no F${fid} tokens to sell`, "err"); return; }
+    const ix = new W3.TransactionInstruction({ programId: UPONLY, keys: [
+      meta(wallet.pk, 1, 1), meta(f.curve, 0, 1), meta(f.mint, 0, 1), meta(ata, 0, 1),
+      meta(f.sellCreator, 0, 1), meta(TOKEN), meta(W3.SystemProgram.programId),
+    ], data: cat(u8b(2), leBytes(amount, 8), leBytes(0, 8)) });
+    say(`selling ${pct}% of F${fid}…`);
+    const sig = await sendTx([ix]);
+    say(`sold ${pct}% of F${fid} — ${sig.slice(0, 12)}…`, "gold");
+    await refreshAll();
+  } catch (e) { say(String(e.message ?? e), "err"); }
+}
+
+// ---- PoW worker (keccak_256, mirrors lib.rs pow_clears) ----
+const workerSrc = `
+importScripts("https://unpkg.com/js-sha3@0.9.3/build/sha3.min.js");
+onmessage = (e) => {
+  const { base, bits } = e.data; // base = digger(32) + idx(4) + seed(32)
+  const target = (2n ** 64n - 1n) >> BigInt(bits);
+  const buf = new Uint8Array(base.length + 8);
+  buf.set(base);
+  let nonce = 0n, count = 0;
+  for (;;) {
+    let v = nonce;
+    for (let i = 0; i < 8; i++) { buf[base.length + i] = Number(v & 0xffn); v >>= 8n; }
+    const h = keccak256.array(buf);
+    let x = 0n;
+    for (let i = 7; i >= 0; i--) x = (x << 8n) | BigInt(h[i]);
+    if (x <= target) { postMessage({ nonce: nonce.toString() }); return; }
+    nonce++; if (++count % 20000 === 0) postMessage({ progress: count });
+  }
+};`;
+const worker = new Worker(URL.createObjectURL(new Blob([workerSrc], { type: "text/javascript" })));
+
+let grinding = false;
+async function digAt(idx) {
+  if (!wallet) { say("connect Phantom first", "err"); return; }
+  if (!myFaction) { say("pick a faction (buy or 'dig for this')", "err"); return; }
+  if (grinding) return;
+  grinding = true;
+  hasDug = true; updateCoach();
+  $("grind").style.display = "block";
+  const f = factions.find((x) => x.id === myFaction);
+  const base = cat(wallet.pk.toBuffer(), leBytes(idx, 4), cfg.seed);
+  worker.onmessage = async (ev) => {
+    if (ev.data.progress) { $("grindPct").textContent = Math.round(ev.data.progress / 1000); return; }
+    $("grind").style.display = "none"; grinding = false;
+    try {
+      // COMMIT — sinks burn + fee, claims the voxel, records the bet. No vein yet.
+      const commitAcct = pda([enc("commit"), leBytes(idx, 4)]);
+      const commit = new W3.TransactionInstruction({ programId: MEGAMINE, keys: [
+        meta(wallet.pk, 1, 1), meta(CONFIG), meta(MINE, 0, 1), meta(linkPda(f.mint)),
+        meta(f.mint, 0, 1), meta(ataOf(wallet.pk, f.mint), 0, 1), meta(f.curve, 0, 1),
+        meta(POT, 0, 1), meta(SPLITTER), meta(new W3.PublicKey(devKey), 0, 1),
+        meta(TOKEN), meta(W3.SystemProgram.programId), meta(commitAcct, 0, 1),
+      ], data: cat(u8b(4), leBytes(idx, 4), leBytes(BigInt(ev.data.nonce), 8)) });
+      say(`⛏ commit idx=${idx} → sending…`);
+      await sendTx([commit]);
+      applyDig(idx, myFaction);
+      // REVEAL — resolves the vein against the (now-sealed) commit slot's hash.
+      // Must be a later slot than the commit, so it can't be bundled/reverted.
+      say(`committed — sealing the roll…`, "gold");
+      await new Promise((r) => setTimeout(r, 1400));
+      const reveal = new W3.TransactionInstruction({ programId: MEGAMINE, keys: [
+        meta(wallet.pk, 1, 1), meta(CONFIG), meta(commitAcct, 0, 1), meta(POT, 0, 1),
+        meta(f.curve, 0, 1), meta(wallet.pk, 0, 1), meta(W3.SYSVAR_SLOT_HASHES_PUBKEY),
+        meta(W3.SystemProgram.programId),
+      ], data: u8b(7) });
+      const rsig = await sendTx([reveal]);
+      let struck = false;
+      try {
+        const tx = await conn.getTransaction(rsig, { maxSupportedTransactionVersion: 0, commitment: "confirmed" });
+        struck = (tx?.meta?.logMessages || []).some((l) => l.includes("STRIKE"));
+      } catch {}
+      if (struck) { flashStrike(idx); const sb = $("shareBtn"); sb.style.display = "block"; clearTimeout(sb._t); sb._t = setTimeout(() => (sb.style.display = "none"), 30000); }
+      say(struck ? `💎 VEIN STRUCK! reward paid — ${rsig.slice(0, 12)}…` : `dug, no vein — ${rsig.slice(0, 12)}…`, struck ? "gold" : "");
+      await refreshAll();
+    } catch (e) { say(String(e.message ?? e).slice(0, 160), "err"); }
+  };
+  worker.postMessage({ base, bits: cfg.powBits });
+}
+
+let devKey = null; // config.dev, needed as a dig account
+
+// ---- rotate (permissionless) ----
+$("rotateBtn").onclick = async () => {
+  if (!wallet) { say("connect Phantom first", "err"); return; }
+  try {
+    const rot = new W3.TransactionInstruction({ programId: MEGAMINE, keys: [
+      meta(CONFIG, 0, 1), meta(W3.SYSVAR_SLOT_HASHES_PUBKEY),
+    ], data: u8b(5) });
+    const sig = await sendTx([rot]);
+    say(`round rotated — ${sig.slice(0, 12)}…`, "gold");
+    await refreshAll();
+  } catch (e) { say(String(e.message ?? e), "err"); }
+};
+
+// ---- three.js voxel engine (same stack as the sim) ----
+const renderer = new THREE.WebGLRenderer({ canvas: $("scene"), antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.24;
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a0d05); // warm amber-black — lamplight fills the void
+scene.fog = new THREE.Fog(0x1a0d05, 300, 780);
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 2000);
+camera.position.set(140, 125, 106);           // pulled in, framed on the dug frontier
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.target.set(50, 50, 6);                // aim at the grown slab, not the empty corner
+controls.minDistance = 45; controls.maxDistance = 340;
+controls.enableDamping = true;
+controls.autoRotate = true; controls.autoRotateSpeed = 0.5;
+controls.update();
+renderer.domElement.addEventListener("pointerdown", () => (controls.autoRotate = false), { once: true });
+
+scene.add(new THREE.HemisphereLight(0xc98a44, 0x241408, 0.75)); // warm sky, warm ground
+scene.add(new THREE.AmbientLight(0x6b431f, 0.4));                // warm ambient
+const key = new THREE.DirectionalLight(0xffcf82, 1.9); key.position.set(120, 300, 150); scene.add(key); // warm key from above
+const rim = new THREE.DirectionalLight(0xd9631e, 0.6); rim.position.set(-130, 30, 190); scene.add(rim);  // warm rim (was cool blue)
+const lamp = new THREE.PointLight(0xffab3e, 2.2, 0, 0); lamp.position.set(55, 55, 130); scene.add(lamp); // lamplight pooling on the face
+
+// vein strike: a gold burst of light at the struck voxel + a brief bloom flash
+function flashStrike(i) {
+  try {
+    const [x, y, z] = posOf(i);
+    const L = new THREE.PointLight(0xffb648, 16, 95, 2);
+    L.position.set(x, y, z + 4); scene.add(L);
+    const e0 = renderer.toneMappingExposure, t0 = performance.now();
+    (function fade() {
+      const k = (performance.now() - t0) / 1400;
+      if (k >= 1) { scene.remove(L); renderer.toneMappingExposure = e0; return; }
+      const g = (1 - k) * (1 - k);
+      L.intensity = 16 * g;
+      renderer.toneMappingExposure = e0 + 0.5 * g;
+      requestAnimationFrame(fade);
+    })();
+  } catch {}
+}
+{
+  const pos = new Float32Array(1500 * 3);
+  for (let i = 0; i < 1500; i++) {
+    const r = 550 + Math.random() * 450, t = Math.random() * Math.PI * 2, u = Math.random() * 2 - 1;
+    const s = Math.sqrt(1 - u * u);
+    pos.set([r * s * Math.cos(t), r * u, r * s * Math.sin(t)], i * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute("position", new THREE.BufferAttribute(pos, 3));
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xb8a888, size: 1.4, sizeAttenuation: false, transparent: true, opacity: 0.75 })));
+}
+
+const CAP = 200_000;
+const box = new RoundedBoxGeometry(1, 1, 1, 2, 0.09);
+const claimBox = new RoundedBoxGeometry(0.86, 0.86, 0.86, 2, 0.12);
+const rockMesh = new THREE.InstancedMesh(box, new THREE.MeshStandardMaterial({ roughness: 0.94, metalness: 0.06 }), CAP);
+const claimMesh = new THREE.InstancedMesh(claimBox, new THREE.MeshBasicMaterial({ toneMapped: false }), CAP);
+for (const m of [rockMesh, claimMesh]) { m.count = 0; m.frustumCulled = false; scene.add(m); }
+// pin the raycast broad-phase sphere to the whole 100^3 world so far-camera
+// clicks aren't wrongly rejected by a stale/undersized instance sphere
+rockMesh.boundingSphere = new THREE.Sphere(new THREE.Vector3(SIZE / 2, SIZE / 2, SIZE / 2), SIZE);
+rockMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+claimMesh.instanceColor = new THREE.InstancedBufferAttribute(new Float32Array(CAP * 3), 3);
+
+{
+  const frontier = new THREE.LineSegments(
+    new THREE.EdgesGeometry(new THREE.BoxGeometry(SIZE, SIZE, SIZE)),
+    new THREE.LineBasicMaterial({ color: 0x4a4234, transparent: true, opacity: 0.6 }),
+  );
+  scene.add(frontier); // the mine only exists as far as someone paid to survey it
+}
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+composer.addPass(new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.55, 0.45, 0.85));
+composer.addPass(new OutputPass());
+function resize() {
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+  camera.aspect = innerWidth / innerHeight; camera.updateProjectionMatrix();
+}
+addEventListener("resize", resize); resize();
+
+const M = new THREE.Matrix4();
+const posOf = (i) => [i % SIZE - SIZE / 2 + 0.5, Math.floor(i / SIZE) % SIZE - SIZE / 2 + 0.5, Math.floor(i / (SIZE * SIZE)) - SIZE / 2 + 0.5];
+const rockSlotToIdx = new Int32Array(CAP);
+const idxToRockSlot = new Map();
+let claimCount = 0;
+const NB = [[1,0,0],[-1,0,0],[0,1,0],[0,-1,0],[0,0,1],[0,0,-1]];
+const idxOf = (x, y, z) => x + y * SIZE + z * SIZE * SIZE;
+const rockColor = (i) => {
+  const n = (Math.imul(i ^ 0x9e3779b9, 2654435761) >>> 8) % 1000 / 1000;
+  if (n > 0.945) return new THREE.Color(0.95, 0.6, 0.18); // buried gold fleck — catches the lamplight
+  const v = 0.20 + n * 0.16;                               // warm brown stone
+  return new THREE.Color(v * 1.45, v * 0.9, v * 0.55);
+};
+function addRock(i) {
+  if (idxToRockSlot.has(i)) return;
+  const slot = rockMesh.count++;
+  rockSlotToIdx[slot] = i; idxToRockSlot.set(i, slot);
+  const [x, y, z] = posOf(i);
+  rockMesh.setMatrixAt(slot, M.makeTranslation(x, y, z));
+  rockMesh.setColorAt(slot, rockColor(i));
+}
+function removeRock(i) {
+  const slot = idxToRockSlot.get(i);
+  if (slot === undefined) return;
+  const last = --rockMesh.count;
+  if (slot !== last) {
+    const li = rockSlotToIdx[last];
+    rockMesh.getMatrixAt(last, M); rockMesh.setMatrixAt(slot, M);
+    rockMesh.setColorAt(slot, rockColor(li));
+    rockSlotToIdx[slot] = li; idxToRockSlot.set(li, slot);
+  }
+  idxToRockSlot.delete(i);
+}
+function addClaim(i, fid) {
+  const [x, y, z] = posOf(i);
+  claimMesh.setMatrixAt(claimCount, M.makeTranslation(x, y, z));
+  const c = new THREE.Color(PALETTE[(fid - 1) % PALETTE.length]).multiplyScalar(1.45);
+  claimMesh.setColorAt(claimCount, c);
+  claimMesh.count = ++claimCount;
+}
+const dirty = () => {
+  rockMesh.instanceMatrix.needsUpdate = true; rockMesh.instanceColor.needsUpdate = true;
+  claimMesh.instanceMatrix.needsUpdate = true; claimMesh.instanceColor.needsUpdate = true;
+};
+const inB = (x, y, z) => x >= 0 && y >= 0 && z >= 0 && x < SIZE && y < SIZE && z < SIZE;
+function isExposed(i) {
+  const x = i % SIZE, y = Math.floor(i / SIZE) % SIZE, z = Math.floor(i / (SIZE * SIZE));
+  if (x === 0 || y === 0 || z === 0 || x === SIZE - 1 || y === SIZE - 1 || z === SIZE - 1) return true;
+  return NB.some(([dx, dy, dz]) => { const n = idxOf(x + dx, y + dy, z + dz); return n < mineLen && world[n] !== 0; });
+}
+function buildWorld() {
+  rockMesh.count = 0; idxToRockSlot.clear(); claimCount = 0; claimMesh.count = 0;
+  for (let i = 0; i < Math.min(world.length, mineLen); i++) {
+    if (world[i] === 0) { if (isExposed(i)) addRock(i); }
+    else addClaim(i, world[i]);
+  }
+  dirty();
+}
+function applyDig(i, fid) {
+  if (world[i] !== 0) return;
+  world[i] = fid;
+  removeRock(i); addClaim(i, fid);
+  const x = i % SIZE, y = Math.floor(i / SIZE) % SIZE, z = Math.floor(i / (SIZE * SIZE));
+  for (const [dx, dy, dz] of NB) {
+    const nx = x + dx, ny = y + dy, nz = z + dz;
+    if (inB(nx, ny, nz) && world[idxOf(nx, ny, nz)] === 0) addRock(idxOf(nx, ny, nz));
+  }
+  dirty();
+}
+
+// picking
+const ray = new THREE.Raycaster();
+const mouse = new THREE.Vector2();
+let downAt = null;
+renderer.domElement.addEventListener("pointerdown", (e) => (downAt = [e.clientX, e.clientY]));
+renderer.domElement.addEventListener("pointerup", (e) => {
+  if (!downAt || Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 9) return;
+  if (!world) return;
+  mouse.set((e.clientX / innerWidth) * 2 - 1, -(e.clientY / innerHeight) * 2 + 1);
+  ray.setFromCamera(mouse, camera);
+  const hit = ray.intersectObject(rockMesh, false)[0];
+  if (hit?.instanceId !== undefined) digAt(rockSlotToIdx[hit.instanceId]);
+});
+
+// ---- boot + polling ----
+async function refreshAll() {
+  const fresh = await loadChain();
+  if (!fresh) return;
+  if (!world) { world = fresh; buildWorld(); }
+  else for (let i = 0; i < fresh.length; i++) if (fresh[i] !== 0 && world[i] === 0) applyDig(i, fresh[i]);
+  await refreshWallet();
+  $("rotateCard").style.display = Date.now() / 1000 >= Number(cfg.endTs) ? "block" : "none";
+}
+
+setInterval(() => {
+  if (!cfg) return;
+  const ms = Number(cfg.endTs) * 1000 - Date.now();
+  $("roundClock").textContent = ms > 0
+    ? `${Math.floor(ms / 60000)}:${String(Math.floor(ms / 1000) % 60).padStart(2, "0")}` : "expired";
+}, 500);
+
+(async () => {
+  rent115 = await conn.getMinimumBalanceForRentExemption(115);
+  rent0 = await conn.getMinimumBalanceForRentExemption(0);
+  const cfgAcc = await conn.getAccountInfo(CONFIG);
+  if (cfgAcc) devKey = new W3.PublicKey(cfgAcc.data.slice(32, 64)).toBase58();
+  await refreshAll();
+  say(`world loaded from ${MINE.toBase58().slice(0, 8)}… (${SIZE}³ on-chain voxels)`);
+  setInterval(refreshAll, 8000);
+})();
+
+renderer.setAnimationLoop(() => { controls.update(); composer.render(); });
+</script>
+</body>
+</html>
